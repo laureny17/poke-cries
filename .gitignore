@@ -1,0 +1,25 @@
+*.pyc
+__pycache__/
+.Python
+*.egg-info/
+dist/
+build/
+.env
+.DS_Store
+
+# Data files (can be large)
+/backend/data/cries/
+/backend/data/vectors/
+/backend/data/cache/
+/backend/data/*.json
+
+# Frontend
+/frontend/node_modules/
+/frontend/build/
+/frontend/.env.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
