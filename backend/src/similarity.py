@@ -4,6 +4,8 @@ Compute similarity scores between Pokémon cries using cosine similarity.
 
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.manifold import SpectralEmbedding
+from sklearn.decomposition import PCA
 from typing import Dict, List, Tuple
 
 
@@ -139,3 +141,69 @@ def compute_distance(similarity: float) -> float:
     distance = 1.0 / (1.0 + (10.0 * similarity))
 
     return distance
+
+
+def compute_overview_layout(
+    pokemon_ids: List[int],
+    similarities: Dict[Tuple[int, int], float],
+    neighbors_per_node: int = 10,
+) -> Dict[int, Dict[str, float]]:
+    """
+    Compute a 2D overview embedding from the normalized similarity graph.
+
+    The layout is derived from a sparsified affinity matrix so local cry
+    neighborhoods stay prominent while broader inter-cluster relationships
+    are still preserved.
+    """
+    if not pokemon_ids:
+        return {}
+
+    sorted_ids = sorted(pokemon_ids)
+    index_by_id = {pid: index for index, pid in enumerate(sorted_ids)}
+    n = len(sorted_ids)
+
+    affinity = np.zeros((n, n), dtype=float)
+    for i, pid1 in enumerate(sorted_ids):
+        affinity[i, i] = 1.0
+        row_scores = []
+        for pid2 in sorted_ids:
+            if pid1 == pid2:
+                continue
+            score = float(similarities.get((pid1, pid2), 0.0))
+            row_scores.append((pid2, max(0.0, min(1.0, score))))
+
+        row_scores.sort(key=lambda item: item[1], reverse=True)
+        for pid2, score in row_scores[:neighbors_per_node]:
+            j = index_by_id[pid2]
+            # Sharpen higher-similarity relationships so neighborhoods form cleanly.
+            affinity[i, j] = max(affinity[i, j], score ** 2.2)
+
+    affinity = np.maximum(affinity, affinity.T)
+    np.fill_diagonal(affinity, 1.0)
+
+    try:
+        embedding = SpectralEmbedding(
+            n_components=2,
+            affinity="precomputed",
+            random_state=42,
+        ).fit_transform(affinity)
+    except Exception:
+        # Fallback: PCA over the affinity rows still preserves broad structure.
+        embedding = PCA(n_components=2, random_state=42).fit_transform(affinity)
+
+    xs = embedding[:, 0]
+    ys = embedding[:, 1]
+    x_min = float(np.min(xs))
+    x_max = float(np.max(xs))
+    y_min = float(np.min(ys))
+    y_max = float(np.max(ys))
+    x_span = max(x_max - x_min, 1e-6)
+    y_span = max(y_max - y_min, 1e-6)
+
+    layout = {}
+    for index, pid in enumerate(sorted_ids):
+        x = ((float(xs[index]) - x_min) / x_span) * 2.0 - 1.0
+        y = ((float(ys[index]) - y_min) / y_span) * 2.0 - 1.0
+        layout[pid] = {"x": x, "y": y}
+
+    return layout

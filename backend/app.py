@@ -17,6 +17,7 @@ from src.data_pipeline import (
 )
 from src.pokeapi_client import get_pokemon_data, get_pokemon_species
 from src.similarity import get_similar_pokemon, normalize_similarity, compute_distance
+from src.similarity import compute_overview_layout
 
 app = Flask(__name__)
 
@@ -63,6 +64,13 @@ def load_data():
     global similarity_data
     if similarity_data is None and DATA_FILE.exists():
         similarity_data = load_similarity_data(DATA_FILE)
+        if similarity_data is not None and not similarity_data.get("overview_layout"):
+            overview_layout = compute_overview_layout(
+                list(similarity_data.get("pokemon_info", {}).keys()),
+                similarity_data.get("similarities", {}),
+            )
+            similarity_data["overview_layout"] = overview_layout
+            save_similarity_data(similarity_data, DATA_FILE)
 
 
 @app.route("/api/health", methods=["GET"])
@@ -245,6 +253,8 @@ def get_similarity_matrix():
         nodes.append({
             "id": idx,
             "pokemon_id": pid,
+            "overview_x": similarity_data.get("overview_layout", {}).get(pid, {}).get("x"),
+            "overview_y": similarity_data.get("overview_layout", {}).get(pid, {}).get("y"),
             **info,
         })
 

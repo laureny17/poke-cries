@@ -99,14 +99,13 @@ export const SettingsPanel = forwardRef(({
             <div key={gen} className="settings-item-wrap">
               <label
                 className={`settings-check-label${locked || overMax ? ' settings-check-locked' : ''}`}
-                onClick={() => handleGenClick(gen)}
+                onClick={e => { e.preventDefault(); handleGenClick(gen); }}
               >
                 <input
                   type="checkbox"
                   checked={!excludedGenerations.has(gen)}
                   disabled={locked || overMax}
                   onChange={() => {}}
-                  onClick={e => e.stopPropagation()}
                 />
                 {GEN_LABELS[gen] || gen.toUpperCase()}
               </label>
@@ -134,14 +133,13 @@ export const SettingsPanel = forwardRef(({
                   style={{ color: locked || overMax
                     ? `${TYPE_COLORS[type] || '#555'}88`
                     : (TYPE_COLORS[type] || '#555') }}
-                  onClick={() => handleTypeClick(type)}
+                  onClick={e => { e.preventDefault(); handleTypeClick(type); }}
                 >
                   <input
                     type="checkbox"
                     checked={!excludedTypes.has(type)}
                     disabled={locked || overMax}
                     onChange={() => {}}
-                    onClick={e => e.stopPropagation()}
                   />
                   {type.toUpperCase()}
                 </label>

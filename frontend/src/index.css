@@ -216,6 +216,29 @@ code {
   outline: none;
 }
 
+.overview-btn {
+  position: absolute;
+  top: 14px;
+  right: 168px;
+  z-index: 30;
+  padding: 8px 14px;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 20px;
+  border: 2px solid #d0d4e0;
+  border-radius: 4px;
+  background: #f8f8fc;
+  color: #666880;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+
+.overview-btn:hover,
+.overview-btn:focus {
+  background: #f0f2ff;
+  border-color: #a0a8c8;
+  outline: none;
+}
+
 /* ── Settings panel ──────────────────────────────────────────────────────── */
 .settings-panel {
   position: absolute;

@@ -13,6 +13,11 @@ export const SimilarityGraph = ({
   selectedNode,
   pokemonDetailsById = {},
 }) => {
+  const MAX_SELECTED_NEIGHBORS = 150;
+  const OVERVIEW_MAX_LINKS_PER_NODE = 5;
+  const OVERVIEW_MIN_LINK_SIMILARITY = 0.42;
+  const SELECTED_SPIRAL_ANGLE = Math.PI * (3 - Math.sqrt(5));
+  const SELECTED_SPIRAL_PITCH = 2.6;
   const svgRef = useRef();
   const simulationRef = useRef();
   const wrapperRef = useRef();
@@ -34,7 +39,7 @@ export const SimilarityGraph = ({
     return { min, max, span };
   }, [similarPokemon]);
 
-  const getNormalizedSimilarity = useCallback(node => {
+  const getSimilarityScore = useCallback(node => {
     if (node.pokemon_id === selectedPokemon) {
       return 1;
     }
@@ -44,11 +49,8 @@ export const SimilarityGraph = ({
       return 0;
     }
 
-    const normalized = (raw - similarityStats.min) / similarityStats.span;
-
-    // Emphasize midrange differences when raw scores are tightly clustered.
-    return Math.pow(Math.max(0, Math.min(1, normalized)), 0.65);
-  }, [selectedPokemon, similarityById, similarityStats]);
+    return Math.max(0, Math.min(1, raw));
+  }, [selectedPokemon, similarityById]);
 
   const focusedNodes = useMemo(() => {
     if (!selectedPokemon || !selectedNode || similarPokemon.length === 0) {
@@ -57,14 +59,14 @@ export const SimilarityGraph = ({
 
     const byId = new Map(nodes.map(node => [node.pokemon_id, node]));
     const center = byId.get(selectedPokemon) || selectedNode;
+
+    // Only include neighbors that are present in `nodes` (= filteredNodes from App).
+    // similarPokemon is sorted by similarity descending, so the slice naturally
+    // gives the most-similar pokemon that pass the current gen/type filters.
     const neighbors = similarPokemon
-      .map(p => byId.get(p.id) || {
-        id: `sim-${p.id}`,
-        pokemon_id: p.id,
-        name: p.name,
-        sprite_url: p.sprite_url,
-      })
-      .filter(Boolean);
+      .map(p => byId.get(p.id))
+      .filter(Boolean)
+      .slice(0, MAX_SELECTED_NEIGHBORS);
 
     return [center, ...neighbors];
   }, [nodes, selectedPokemon, selectedNode, similarPokemon]);
@@ -80,7 +82,7 @@ export const SimilarityGraph = ({
       // targets would be missing from the simulation — D3 throws "node not found".
       const focusedPokemonIdSet = new Set(focusedNodes.map(n => n.pokemon_id));
 
-      return links.slice(0, 4000)
+      const rawLinks = links
         .map(link => {
           const source = typeof link.source === 'object' ? link.source.id : link.source;
           const target = typeof link.target === 'object' ? link.target.id : link.target;
@@ -96,6 +98,31 @@ export const SimilarityGraph = ({
           focusedPokemonIdSet.has(link.source) &&
           focusedPokemonIdSet.has(link.target)
         );
+
+      const sortedLinks = rawLinks
+        .filter(link => (link.similarity || 0) >= OVERVIEW_MIN_LINK_SIMILARITY)
+        .sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
+
+      const degreeByPokemonId = new Map();
+      const keptLinks = [];
+
+      sortedLinks.forEach(link => {
+        const sourceDegree = degreeByPokemonId.get(link.source) || 0;
+        const targetDegree = degreeByPokemonId.get(link.target) || 0;
+
+        if (
+          sourceDegree >= OVERVIEW_MAX_LINKS_PER_NODE ||
+          targetDegree >= OVERVIEW_MAX_LINKS_PER_NODE
+        ) {
+          return;
+        }
+
+        keptLinks.push(link);
+        degreeByPokemonId.set(link.source, sourceDegree + 1);
+        degreeByPokemonId.set(link.target, targetDegree + 1);
+      });
+
+      return keptLinks;
     }
 
     const focusedPokemonIds = new Set(
@@ -112,36 +139,73 @@ export const SimilarityGraph = ({
   }, [nodes, links, selectedPokemon, similarPokemon, focusedNodes]);
 
   const getNodeRadius = useCallback(node => {
-    if (node.pokemon_id === selectedPokemon) {
-      return 110;
+    if (!selectedPokemon) {
+      return 8;
     }
 
-    const relativeSimilarity = getNormalizedSimilarity(node);
-    // Range: 9 (least similar) → 55 (most similar). Max is exactly half of selected (110).
-    return 9 + (relativeSimilarity * 46);
-  }, [selectedPokemon, getNormalizedSimilarity]);
+    if (node.pokemon_id === selectedPokemon) {
+      return 52;
+    }
+
+    const relativeSimilarity = getSimilarityScore(node);
+    // Keep selected-view nodes compact so overlap handling does not inflate the whole layout.
+    return 4 + (relativeSimilarity * 12);
+  }, [selectedPokemon, getSimilarityScore]);
+
+  const selectedSimilarityRange = useMemo(() => {
+    if (!selectedPokemon) {
+      return { min: 0, max: 1, span: 1 };
+    }
+
+    const visibleNeighborScores = focusedNodes
+      .filter(node => node.pokemon_id !== selectedPokemon)
+      .map(node => similarityById[node.pokemon_id])
+      .filter(score => typeof score === 'number' && Number.isFinite(score));
+
+    if (visibleNeighborScores.length === 0) {
+      return { min: 0, max: 1, span: 1 };
+    }
+
+    const min = Math.min(...visibleNeighborScores);
+    const max = Math.max(...visibleNeighborScores);
+    return {
+      min,
+      max,
+      span: Math.max(max - min, 1e-6),
+    };
+  }, [focusedNodes, selectedPokemon, similarityById]);
+
+  const getRelativeSimilarityScore = useCallback(node => {
+    if (node.pokemon_id === selectedPokemon) {
+      return 1;
+    }
+
+    const rawSimilarity = getSimilarityScore(node);
+    if (!selectedPokemon) {
+      return rawSimilarity;
+    }
+
+    return Math.max(
+      0,
+      Math.min(1, (rawSimilarity - selectedSimilarityRange.min) / selectedSimilarityRange.span)
+    );
+  }, [selectedPokemon, getSimilarityScore, selectedSimilarityRange]);
 
   const getTargetDistance = useCallback(node => {
     if (node.pokemon_id === selectedPokemon) {
       return 0;
     }
 
-    const relativeSimilarity = getNormalizedSimilarity(node);
-    // Exponential: very similar nodes cluster tightly near center,
-    // dissimilar nodes spread dramatically far out.
-    return 80 + (Math.pow(1 - relativeSimilarity, 1.5) * 540);
-  }, [selectedPokemon, getNormalizedSimilarity]);
-
-  const getStableAngle = useCallback(node => {
-    const seedString = `${selectedPokemon || 0}:${node.pokemon_id}`;
-    let hash = 0;
-    for (let i = 0; i < seedString.length; i += 1) {
-      hash = ((hash << 5) - hash + seedString.charCodeAt(i)) | 0;
+    if (!selectedPokemon) {
+      return 0;
     }
 
-    const normalized = (Math.abs(hash) % 100000) / 100000;
-    return normalized * Math.PI * 2;
-  }, [selectedPokemon]);
+    const relativeSimilarity = getRelativeSimilarityScore(node);
+    const touchingDistance = getNodeRadius({ pokemon_id: selectedPokemon }) + getNodeRadius(node) + 2;
+
+    // Best visible match (relative = 1) sits right next to the selected pokemon.
+    return touchingDistance + (Math.pow(1 - relativeSimilarity, 1.75) * 130);
+  }, [selectedPokemon, getRelativeSimilarityScore, getNodeRadius]);
 
   useEffect(() => {
     if (!focusedNodes || focusedNodes.length === 0) {
@@ -152,21 +216,84 @@ export const SimilarityGraph = ({
     const height = svgRef.current.clientHeight;
     const centerX = width / 2;
     const centerY = height / 2;
+    const plotRadius = Math.min(width, height) * 0.42;
 
-    const layoutNodes = focusedNodes.map(node => {
+    const neighborOrder = focusedNodes
+      .filter(node => node.pokemon_id !== selectedPokemon)
+      .slice()
+      .sort((a, b) => a.pokemon_id - b.pokemon_id);
+
+    const neighborRank = new Map(
+      neighborOrder.map((node, index) => [node.pokemon_id, index])
+    );
+
+    const baseLayoutNodes = focusedNodes.map(node => {
       const similarity = similarityById[node.pokemon_id] ?? null;
-      const relativeSimilarity = getNormalizedSimilarity(node);
-      const angle = getStableAngle(node);
-      const radialDistance = getTargetDistance(node);
+      const relativeSimilarity = getRelativeSimilarityScore(node);
+      const radius = getNodeRadius(node);
+      let angle = -Math.PI / 2;
+      let spiralOffset = 0;
+
+      if (node.pokemon_id !== selectedPokemon) {
+        const rank = neighborRank.get(node.pokemon_id) ?? 0;
+        angle = (-Math.PI / 2) + (rank * SELECTED_SPIRAL_ANGLE);
+        // Gentle outward spiral: improves readability without globally inflating
+        // the neighborhood or forcing a single node per angle.
+        spiralOffset = SELECTED_SPIRAL_PITCH * Math.sqrt(rank);
+      }
+
+      const baseDistance = getTargetDistance(node) + spiralOffset;
+      const overviewX = typeof node.overview_x === 'number'
+        ? centerX + (node.overview_x * plotRadius)
+        : centerX;
+      const overviewY = typeof node.overview_y === 'number'
+        ? centerY + (node.overview_y * plotRadius)
+        : centerY;
 
       return {
         ...node,
         similarity,
         relativeSimilarity,
-        x: centerX + (Math.cos(angle) * radialDistance),
-        y: centerY + (Math.sin(angle) * radialDistance),
+        radius,
+        angle,
+        baseDistance,
+        distance: baseDistance,
+        tx: selectedPokemon ? centerX + (Math.cos(angle) * baseDistance) : overviewX,
+        ty: selectedPokemon ? centerY + (Math.sin(angle) * baseDistance) : overviewY,
+        x: selectedPokemon ? centerX + (Math.cos(angle) * baseDistance) : overviewX,
+        y: selectedPokemon ? centerY + (Math.sin(angle) * baseDistance) : overviewY,
       };
     });
+
+    let layoutNodes = baseLayoutNodes;
+
+    if (selectedPokemon) {
+      layoutNodes = baseLayoutNodes.map(node => {
+        if (node.pokemon_id === selectedPokemon) {
+          return {
+            ...node,
+            distance: 0,
+            tx: centerX,
+            ty: centerY,
+            x: centerX,
+            y: centerY,
+          };
+        }
+
+        const distance = node.baseDistance;
+        const x = centerX + (Math.cos(node.angle) * distance);
+        const y = centerY + (Math.sin(node.angle) * distance);
+
+        return {
+          ...node,
+          distance,
+          tx: x,
+          ty: y,
+          x,
+          y,
+        };
+      });
+    }
 
     const layoutLinks = focusedLinks.map(link => ({ ...link }));
 
@@ -186,43 +313,41 @@ export const SimilarityGraph = ({
 
     const g = svg.append('g');
 
-    const linkForce = d3.forceLink(layoutLinks)
-      .id(node => node.pokemon_id)
-      .distance(link => {
-        if (selectedPokemon) {
-          const normalized = Math.pow(
-            Math.max(
-              0,
-              Math.min(1, ((link.similarity || similarityStats.min) - similarityStats.min) / similarityStats.span)
-            ),
-            0.65
-          );
-
-          return 80 + (Math.pow(1 - normalized, 1.5) * 500);
-        }
-        return 100;
-      })
-      .strength(selectedPokemon ? 0.4 : 0.2);
-
-    const simulation = d3.forceSimulation(layoutNodes)
-      .force('link', linkForce)
-      .force(
-        'charge',
-        d3.forceManyBody().strength(node => (node.pokemon_id === selectedPokemon ? -15 : -40))
-      )
-      .force('center', d3.forceCenter(centerX, centerY).strength(selectedPokemon ? 0.08 : 0.1))
-      .force(
-        'collision',
-        d3.forceCollide().radius(node => getNodeRadius(node) + 4).strength(0.8)
-      )
-      .alphaDecay(0.12)
-      .velocityDecay(0.8);
-
+    let simulation;
     if (selectedPokemon) {
-      simulation.force(
-        'radial',
-        d3.forceRadial(node => getTargetDistance(node), centerX, centerY).strength(0.4)
+      const nodesByPokemonId = new Map(
+        layoutNodes.map(node => [node.pokemon_id, node])
       );
+
+      layoutLinks.forEach(link => {
+        link.source = nodesByPokemonId.get(link.source);
+        link.target = nodesByPokemonId.get(link.target);
+      });
+
+      // Selected mode is static: nodes stay exactly at the positions implied by
+      // their individual similarity scores, with a light collision/radial pass
+      // to reduce overlap without collapsing into a generic force blob.
+      simulation = d3.forceSimulation(layoutNodes)
+        .force('radial', d3.forceRadial(node => node.baseDistance, centerX, centerY).strength(0.08))
+        .force('x', d3.forceX(node => node.tx).strength(0.02))
+        .force('y', d3.forceY(node => node.ty).strength(0.02))
+        .force(
+          'collision',
+          d3.forceCollide().radius(node => node.radius + 2).strength(0.35)
+        )
+        .alphaDecay(0.16)
+        .velocityDecay(0.7);
+    } else {
+      simulation = d3.forceSimulation(layoutNodes)
+        .force('x', d3.forceX(node => node.tx).strength(0.22))
+        .force('y', d3.forceY(node => node.ty).strength(0.22))
+        .force(
+          'collision',
+          d3.forceCollide().radius(node => getNodeRadius(node) + 3).strength(0.95)
+        )
+        .force('charge', d3.forceManyBody().strength(-8))
+        .alphaDecay(0.06)
+        .velocityDecay(0.45);
     }
 
     simulationRef.current = simulation;
@@ -269,23 +394,19 @@ export const SimilarityGraph = ({
       .data(layoutNodes)
       .enter()
       .append('g')
-      .attr('class', 'node')
-      .call(d3.drag()
-        .on('start', dragstarted)
-        .on('drag', dragged)
-        .on('end', dragended));
+      .attr('class', 'node');
 
     node.append('circle')
-      .attr('r', d => getNodeRadius(d) + 3)
+      .attr('r', d => d.radius + 3)
       .attr('fill', d => (d.pokemon_id === selectedPokemon ? '#f9c74f' : '#7ec8e3'))
       .attr('fill-opacity', d => (d.pokemon_id === selectedPokemon ? 0.2 : 0.13));
 
     node.append('image')
       .attr('class', 'node-sprite')
-      .attr('x', d => -getNodeRadius(d))
-      .attr('y', d => -getNodeRadius(d))
-      .attr('width', d => getNodeRadius(d) * 2)
-      .attr('height', d => getNodeRadius(d) * 2)
+      .attr('x', d => -d.radius)
+      .attr('y', d => -d.radius)
+      .attr('width', d => d.radius * 2)
+      .attr('height', d => d.radius * 2)
       .attr('href', d => d.sprite_url || '')
       .attr('opacity', 0.96)
       .style('pointer-events', 'none');
@@ -354,8 +475,8 @@ export const SimilarityGraph = ({
       setTooltip(null);
     });
 
-    // Pre-settle the layout silently so nodes never visibly fly around on load.
-    simulation.tick(200);
+    // Pre-settle silently before rendering.
+    simulation.tick(selectedPokemon ? 35 : 180);
     simulation.stop();
 
     // Render the already-settled initial positions.
@@ -366,7 +487,7 @@ export const SimilarityGraph = ({
       .attr('y2', d => d.target.y);
     node.attr('transform', d => `translate(${d.x},${d.y})`);
 
-    // Update DOM positions during drag-induced simulation runs.
+    // Update DOM positions during simulation runs.
     simulation.on('tick', () => {
       link
         .attr('x1', d => d.source.x)
@@ -384,26 +505,21 @@ export const SimilarityGraph = ({
 
     svg.call(zoom);
     if (selectedPokemon) {
-      svg.call(zoom.transform, d3.zoomIdentity.translate(0, 0).scale(1.05));
-    }
-
-    function dragstarted(event, d) {
-      if (!event.active) simulation.alphaTarget(0.3).restart();
-      d.fx = d.x;
-      d.fy = d.y;
-    }
-
-    function dragged(event, d) {
-      d.fx = event.x;
-      d.fy = event.y;
-    }
-
-    function dragended(event, d) {
-      if (!event.active) simulation.alphaTarget(0);
-      if (d.pokemon_id !== selectedPokemon) {
-        d.fx = null;
-        d.fy = null;
-      }
+      const centerRadius = getNodeRadius({ pokemon_id: selectedPokemon });
+      const nonCenterNodes = layoutNodes.filter(node => node.pokemon_id !== selectedPokemon);
+      const maxExtent = nonCenterNodes.reduce((extent, node) => {
+        const dx = Math.abs(node.x - centerX) + node.radius + 24;
+        const dy = Math.abs(node.y - centerY) + node.radius + 24;
+        return Math.max(extent, dx, dy);
+      }, centerRadius + 24);
+      const fitScale = Math.min(width, height) / Math.max(maxExtent * 2, 1);
+      svg.call(
+        zoom.transform,
+        d3.zoomIdentity
+          .translate(width / 2, height / 2)
+          .scale(Math.max(0.15, Math.min(1.05, fitScale)))
+          .translate(-centerX, -centerY)
+      );
     }
 
     return () => {
@@ -413,7 +529,7 @@ export const SimilarityGraph = ({
     };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusedNodes, focusedLinks, selectedPokemon, similarityStats, getStableAngle, getNodeRadius, getTargetDistance]);
+  }, [focusedNodes, focusedLinks, selectedPokemon, similarityStats, getNodeRadius, getTargetDistance, getSimilarityScore]);
 
   useEffect(() => {
     if (!tooltip) {

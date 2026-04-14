@@ -20,6 +20,7 @@ from .similarity import (
     get_similar_pokemon,
     normalize_similarity,
     compute_distance,
+    compute_overview_layout,
 )
 
 
@@ -166,11 +167,17 @@ def build_similarity_matrix(pokemon_ids: List[int]) -> Dict:
     normalized_similarities = {
         k: normalize_similarity(v) for k, v in raw_similarities.items()
     }
+
+    overview_layout = compute_overview_layout(
+        list(mfcc_vectors.keys()),
+        normalized_similarities,
+    )
     
     return {
         "vectors": mfcc_vectors,
         "similarities": normalized_similarities,
         "pokemon_info": pokemon_info,
+        "overview_layout": overview_layout,
     }
 
 
@@ -199,6 +206,9 @@ def save_similarity_data(data: Dict, output_file: Path):
         "vectors": vectors_list,
         "similarities": similarities,
         "pokemon_info": data["pokemon_info"],
+        "overview_layout": {
+            str(pid): position for pid, position in data.get("overview_layout", {}).items()
+        },
     }
     
     with open(output_file, 'w') as f:
@@ -235,11 +245,20 @@ def load_similarity_data(input_file: Path) -> Optional[Dict]:
         
         pokemon_info_raw = data.get("pokemon_info", {})
         pokemon_info = {int(pid): info for pid, info in pokemon_info_raw.items()}
+        overview_layout_raw = data.get("overview_layout", {})
+        overview_layout = {
+            int(pid): {
+                "x": float(position.get("x", 0.0)),
+                "y": float(position.get("y", 0.0)),
+            }
+            for pid, position in overview_layout_raw.items()
+        }
 
         return {
             "vectors": vectors,
             "similarities": similarities,
             "pokemon_info": pokemon_info,
+            "overview_layout": overview_layout,
         }
     except Exception as e:
         print(f"Error loading similarity data from {input_file}: {e}")

@@ -8,6 +8,7 @@ import './App.css';
 // Max Pokémon shown in the overview graph at once.
 // Keeps the force simulation fast and the graph readable.
 const MAX_NODES = 400;
+const GRAPH_CACHE_KEY = 'poke-cries:similarity-matrix:v2';
 
 export default function App() {
   const [selectedPokemon, setSelectedPokemon] = useState(null);
@@ -111,13 +112,35 @@ export default function App() {
   // Load the broad similarity matrix once on mount
   useEffect(() => {
     const loadMatrix = async () => {
+      let hasCachedData = false;
+
       try {
-        setLoading(true);
+        const cached = window.localStorage.getItem(GRAPH_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed?.nodes && parsed?.links) {
+            setGraphData(parsed);
+            hasCachedData = true;
+          }
+        }
+      } catch (err) {
+        console.warn('Error reading cached similarity matrix:', err);
+      }
+
+      try {
+        setLoading(!hasCachedData);
         setError(null);
         const data = await apiClient.getSimilarityMatrix(null, 0.15);
         setGraphData(data);
+        try {
+          window.localStorage.setItem(GRAPH_CACHE_KEY, JSON.stringify(data));
+        } catch (err) {
+          console.warn('Error caching similarity matrix:', err);
+        }
       } catch (err) {
-        setError(err.message);
+        if (!hasCachedData) {
+          setError(err.message);
+        }
       } finally {
         setLoading(false);
       }
@@ -133,7 +156,9 @@ export default function App() {
         return;
       }
       try {
-        const data = await apiClient.getSimilarPokemon(selectedPokemon, 90, 0.0);
+        // Fetch a large candidate pool so client-side gen/type filtering
+        // still leaves enough pokemon to fill up to MAX_NODES in the selected view.
+        const data = await apiClient.getSimilarPokemon(selectedPokemon, 800, 0.0);
         setSimilarPokemon(data);
       } catch (err) {
         console.error('Error loading similar pokemon:', err);
@@ -252,6 +277,15 @@ export default function App() {
       {graphData && (
         <SearchBar nodes={graphData.nodes} onSelect={setSelectedPokemon} />
       )}
+
+      {selectedPokemon ? (
+        <button
+          className="overview-btn"
+          onClick={() => setSelectedPokemon(null)}
+        >
+          ← OVERVIEW
+        </button>
+      ) : null}
 
       <button
         ref={settingsBtnRef}
