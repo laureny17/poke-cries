@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, forwardRef } from 'react';
+import { TYPE_COLORS } from '../typeColors';
 
 const GEN_LABELS = {
   'generation-i':    'GEN I',
@@ -10,27 +11,6 @@ const GEN_LABELS = {
   'generation-vii':  'GEN VII',
   'generation-viii': 'GEN VIII',
   'generation-ix':   'GEN IX',
-};
-
-const TYPE_COLORS = {
-  normal:   '#888888',
-  fire:     '#dd6620',
-  water:    '#4488dd',
-  electric: '#ccaa00',
-  grass:    '#44aa44',
-  ice:      '#44bbbb',
-  fighting: '#aa2222',
-  poison:   '#882288',
-  ground:   '#bb8800',
-  flying:   '#8866cc',
-  psychic:  '#cc2266',
-  bug:      '#778811',
-  rock:     '#998833',
-  ghost:    '#553388',
-  dragon:   '#4422cc',
-  dark:     '#554433',
-  steel:    '#8888aa',
-  fairy:    '#cc66aa',
 };
 
 export const SettingsPanel = forwardRef(({

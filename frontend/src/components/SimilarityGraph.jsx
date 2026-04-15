@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as d3 from 'd3';
+import { TYPE_COLORS } from '../typeColors';
 
 export const SimilarityGraph = ({
   nodes,
@@ -22,6 +23,25 @@ export const SimilarityGraph = ({
   const simulationRef = useRef();
   const wrapperRef = useRef();
   const [tooltip, setTooltip] = useState(null);
+
+  const getNodeTypeFill = useCallback(node => {
+    const [typeA, typeB] = (node.types || []).filter(Boolean);
+    const colorA = TYPE_COLORS[typeA] || '#7ec8e3';
+    const colorB = TYPE_COLORS[typeB] || colorA;
+
+    if (!typeA) {
+      return { fill: '#7ec8e3', gradient: null };
+    }
+
+    if (!typeB || typeB === typeA) {
+      return { fill: colorA, gradient: null };
+    }
+
+    return {
+      fill: `url(#pokemon-type-gradient-${node.pokemon_id})`,
+      gradient: [colorA, colorB],
+    };
+  }, []);
 
   const similarityStats = useMemo(() => {
     const values = similarPokemon
@@ -64,6 +84,7 @@ export const SimilarityGraph = ({
     // similarPokemon is sorted by similarity descending, so the slice naturally
     // gives the most-similar pokemon that pass the current gen/type filters.
     const neighbors = similarPokemon
+      .filter(p => p.id !== selectedPokemon)
       .map(p => byId.get(p.id))
       .filter(Boolean)
       .slice(0, MAX_SELECTED_NEIGHBORS);
@@ -130,7 +151,12 @@ export const SimilarityGraph = ({
     );
 
     return similarPokemon
-      .filter(pokemon => focusedPokemonIds.has(pokemon.id) && focusedPokemonIds.has(selectedPokemon))
+      .filter(
+        pokemon =>
+          pokemon.id !== selectedPokemon &&
+          focusedPokemonIds.has(pokemon.id) &&
+          focusedPokemonIds.has(selectedPokemon)
+      )
       .map(pokemon => ({
         source: selectedPokemon,
         target: pokemon.id,
@@ -313,6 +339,38 @@ export const SimilarityGraph = ({
 
     const g = svg.append('g');
 
+    const defs = svg.append('defs');
+    layoutNodes.forEach(node => {
+      const { gradient } = getNodeTypeFill(node);
+      if (!gradient) {
+        return;
+      }
+
+      const gradientId = `pokemon-type-gradient-${node.pokemon_id}`;
+      const gradientEl = defs.append('linearGradient')
+        .attr('id', gradientId)
+        .attr('x1', '0%')
+        .attr('y1', '0%')
+        .attr('x2', '100%')
+        .attr('y2', '0%');
+
+      gradientEl.append('stop')
+        .attr('offset', '0%')
+        .attr('stop-color', gradient[0]);
+
+      gradientEl.append('stop')
+        .attr('offset', '50%')
+        .attr('stop-color', gradient[0]);
+
+      gradientEl.append('stop')
+        .attr('offset', '50%')
+        .attr('stop-color', gradient[1]);
+
+      gradientEl.append('stop')
+        .attr('offset', '100%')
+        .attr('stop-color', gradient[1]);
+    });
+
     let simulation;
     if (selectedPokemon) {
       const nodesByPokemonId = new Map(
@@ -398,8 +456,10 @@ export const SimilarityGraph = ({
 
     node.append('circle')
       .attr('r', d => d.radius + 3)
-      .attr('fill', d => (d.pokemon_id === selectedPokemon ? '#f9c74f' : '#7ec8e3'))
-      .attr('fill-opacity', d => (d.pokemon_id === selectedPokemon ? 0.2 : 0.13));
+      .attr('fill', d => getNodeTypeFill(d).fill)
+      .attr('fill-opacity', 0.18)
+      .attr('stroke', d => (d.pokemon_id === selectedPokemon ? '#ffffff' : 'none'))
+      .attr('stroke-width', d => (d.pokemon_id === selectedPokemon ? 3 : 0));
 
     node.append('image')
       .attr('class', 'node-sprite')
@@ -478,6 +538,74 @@ export const SimilarityGraph = ({
     // Pre-settle silently before rendering.
     simulation.tick(selectedPokemon ? 35 : 180);
     simulation.stop();
+
+    if (selectedPokemon) {
+      const rankedNeighbors = layoutNodes
+        .filter(node => node.pokemon_id !== selectedPokemon)
+        .slice()
+        .sort((a, b) => {
+          const similarityDelta = (b.similarity || 0) - (a.similarity || 0);
+          if (Math.abs(similarityDelta) > 1e-9) {
+            return similarityDelta;
+          }
+          return a.pokemon_id - b.pokemon_id;
+        });
+
+      let minAllowedDistance = 0;
+      rankedNeighbors.forEach(node => {
+        const dx = node.x - centerX;
+        const dy = node.y - centerY;
+        const actualDistance = Math.hypot(dx, dy);
+        const correctedDistance = Math.max(actualDistance, minAllowedDistance);
+        const scale = correctedDistance / Math.max(actualDistance, 1e-6);
+
+        node.x = centerX + (dx * scale);
+        node.y = centerY + (dy * scale);
+        node.tx = node.x;
+        node.ty = node.y;
+        node.distance = correctedDistance;
+
+        minAllowedDistance = correctedDistance;
+      });
+
+      const orderedNeighbors = rankedNeighbors.slice();
+      for (let index = 0; index < orderedNeighbors.length; index += 1) {
+        const node = orderedNeighbors[index];
+        let distance = node.distance;
+        let moved = true;
+        let safety = 0;
+
+        while (moved && safety < 120) {
+          moved = false;
+          safety += 1;
+
+          const blockers = [layoutNodes.find(candidate => candidate.pokemon_id === selectedPokemon)]
+            .concat(orderedNeighbors.slice(0, index))
+            .filter(Boolean);
+
+          for (const other of blockers) {
+            const otherDx = other.x - centerX;
+            const otherDy = other.y - centerY;
+            const candidateX = centerX + (Math.cos(node.angle) * distance);
+            const candidateY = centerY + (Math.sin(node.angle) * distance);
+            const dx = candidateX - (centerX + otherDx);
+            const dy = candidateY - (centerY + otherDy);
+            const minSeparation = node.radius + other.radius + 3;
+
+            if (Math.hypot(dx, dy) < minSeparation) {
+              distance += Math.max(1.5, minSeparation - Math.hypot(dx, dy));
+              moved = true;
+            }
+          }
+        }
+
+        node.distance = distance;
+        node.x = centerX + (Math.cos(node.angle) * distance);
+        node.y = centerY + (Math.sin(node.angle) * distance);
+        node.tx = node.x;
+        node.ty = node.y;
+      }
+    }
 
     // Render the already-settled initial positions.
     link
