@@ -817,7 +817,8 @@ export const SimilarityGraph = ({
         </div>
       ) : null}
       <div className="graph-hint">
-        Click a Pokémon to center its audio neighborhood.
+        Double-click a Pokémon to center its audio neighborhood. Click to hear
+        its cry.
       </div>
     </div>
   );
