@@ -1,14 +1,20 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { SimilarityGraph } from './components/SimilarityGraph';
-import { SearchBar } from './components/SearchBar';
-import { SettingsPanel } from './components/SettingsPanel';
-import { apiClient } from './api/client';
-import './App.css';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
+import { SimilarityGraph } from "./components/SimilarityGraph";
+import { SearchBar } from "./components/SearchBar";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { apiClient } from "./api/client";
+import "./App.css";
 
 // Max Pokémon shown in the overview graph at once.
 // Keeps the force simulation fast and the graph readable.
 const MAX_NODES = 400;
-const GRAPH_CACHE_KEY = 'poke-cries:similarity-matrix:v2';
+const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v2";
 
 export default function App() {
   const [selectedPokemon, setSelectedPokemon] = useState(null);
@@ -31,7 +37,7 @@ export default function App() {
   // Close settings panel on outside click
   useEffect(() => {
     if (!settingsOpen) return undefined;
-    const handler = e => {
+    const handler = (e) => {
       if (
         !settingsBtnRef.current?.contains(e.target) &&
         !settingsPanelRef.current?.contains(e.target)
@@ -39,65 +45,95 @@ export default function App() {
         setSettingsOpen(false);
       }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, [settingsOpen]);
 
   // On first data load, default to showing Gen I only.
   useEffect(() => {
     if (!graphData) return;
-    const allGens = new Set(graphData.nodes.map(n => n.generation).filter(Boolean));
-    allGens.delete('generation-i');
+    const allGens = new Set(
+      graphData.nodes.map((n) => n.generation).filter(Boolean),
+    );
+    allGens.delete("generation-i");
     setExcludedGenerations(allGens);
   }, [graphData]); // graphData only transitions once: null → loaded
 
-  const toggleGeneration = useCallback((gen, filteredNodes, excludedTypes) => {
-    // Hiding a gen is always allowed.
-    if (!excludedGenerations.has(gen)) {
-      setExcludedGenerations(prev => { const n = new Set(prev); n.add(gen); return n; });
+  const toggleGeneration = useCallback(
+    (gen, filteredNodes, excludedTypes) => {
+      // Hiding a gen is always allowed.
+      if (!excludedGenerations.has(gen)) {
+        setExcludedGenerations((prev) => {
+          const n = new Set(prev);
+          n.add(gen);
+          return n;
+        });
+        return false;
+      }
+      // Showing a gen: check we won't exceed MAX_NODES.
+      const wouldAdd = (graphData?.nodes || []).filter(
+        (n) =>
+          n.generation === gen &&
+          (excludedTypes.size === 0 ||
+            (n.types || []).some((t) => !excludedTypes.has(t))),
+      ).length;
+      if (filteredNodes.length + wouldAdd > MAX_NODES) return true; // blocked
+      setExcludedGenerations((prev) => {
+        const n = new Set(prev);
+        n.delete(gen);
+        return n;
+      });
       return false;
-    }
-    // Showing a gen: check we won't exceed MAX_NODES.
-    const wouldAdd = (graphData?.nodes || []).filter(n =>
-      n.generation === gen &&
-      (excludedTypes.size === 0 || (n.types || []).some(t => !excludedTypes.has(t)))
-    ).length;
-    if (filteredNodes.length + wouldAdd > MAX_NODES) return true; // blocked
-    setExcludedGenerations(prev => { const n = new Set(prev); n.delete(gen); return n; });
-    return false;
-  }, [excludedGenerations, graphData]);
+    },
+    [excludedGenerations, graphData],
+  );
 
-  const toggleType = useCallback((type, filteredNodes, excludedGenerations) => {
-    // Hiding a type is always allowed.
-    if (!excludedTypes.has(type)) {
-      setExcludedTypes(prev => { const n = new Set(prev); n.add(type); return n; });
+  const toggleType = useCallback(
+    (type, filteredNodes, excludedGenerations) => {
+      // Hiding a type is always allowed.
+      if (!excludedTypes.has(type)) {
+        setExcludedTypes((prev) => {
+          const n = new Set(prev);
+          n.add(type);
+          return n;
+        });
+        return false;
+      }
+      // Showing a type: count nodes that would become newly visible.
+      const wouldAdd = (graphData?.nodes || []).filter(
+        (n) =>
+          !excludedGenerations.has(n.generation) &&
+          (n.types || []).includes(type) &&
+          (n.types || []).every((t) => t === type || excludedTypes.has(t)),
+      ).length;
+      if (filteredNodes.length + wouldAdd > MAX_NODES) return true; // blocked
+      setExcludedTypes((prev) => {
+        const n = new Set(prev);
+        n.delete(type);
+        return n;
+      });
       return false;
-    }
-    // Showing a type: count nodes that would become newly visible.
-    const wouldAdd = (graphData?.nodes || []).filter(n =>
-      !excludedGenerations.has(n.generation) &&
-      (n.types || []).includes(type) &&
-      (n.types || []).every(t => t === type || excludedTypes.has(t))
-    ).length;
-    if (filteredNodes.length + wouldAdd > MAX_NODES) return true; // blocked
-    setExcludedTypes(prev => { const n = new Set(prev); n.delete(type); return n; });
-    return false;
-  }, [excludedTypes, graphData]);
+    },
+    [excludedTypes, graphData],
+  );
 
-  const ensurePokemonDetails = async pokemonId => {
+  const ensurePokemonDetails = async (pokemonId) => {
     if (!pokemonId) return null;
     if (pokemonDetailsById[pokemonId]) return pokemonDetailsById[pokemonId];
     try {
       const details = await apiClient.getPokemonDetails(pokemonId);
-      setPokemonDetailsById(previous => ({ ...previous, [pokemonId]: details }));
+      setPokemonDetailsById((previous) => ({
+        ...previous,
+        [pokemonId]: details,
+      }));
       return details;
     } catch (err) {
-      console.error('Error fetching pokemon details:', err);
+      console.error("Error fetching pokemon details:", err);
       return null;
     }
   };
 
-  const playPokemonCry = async pokemonId => {
+  const playPokemonCry = async (pokemonId) => {
     const details = await ensurePokemonDetails(pokemonId);
     const cryUrl = details?.cry_url || details?.cry_url_legacy;
     if (!cryUrl) return;
@@ -106,7 +142,7 @@ export default function App() {
       audio.volume = 0.75;
       await audio.play();
     } catch (err) {
-      console.error('Error playing cry audio:', err);
+      console.error("Error playing cry audio:", err);
     }
   };
 
@@ -125,7 +161,7 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.warn('Error reading cached similarity matrix:', err);
+        console.warn("Error reading cached similarity matrix:", err);
       }
 
       try {
@@ -136,7 +172,7 @@ export default function App() {
         try {
           window.localStorage.setItem(GRAPH_CACHE_KEY, JSON.stringify(data));
         } catch (err) {
-          console.warn('Error caching similarity matrix:', err);
+          console.warn("Error caching similarity matrix:", err);
         }
       } catch (err) {
         if (!hasCachedData) {
@@ -164,11 +200,15 @@ export default function App() {
       try {
         // Fetch a large candidate pool so client-side gen/type filtering
         // still leaves enough pokemon to fill up to MAX_NODES in the selected view.
-        const data = await apiClient.getSimilarPokemon(selectedPokemon, 800, 0.0);
+        const data = await apiClient.getSimilarPokemon(
+          selectedPokemon,
+          800,
+          0.0,
+        );
         if (isCancelled) return;
         setSimilarPokemon(data);
       } catch (err) {
-        console.error('Error loading similar pokemon:', err);
+        console.error("Error loading similar pokemon:", err);
       } finally {
         if (!isCancelled) {
           setSelectedGraphLoading(false);
@@ -184,7 +224,7 @@ export default function App() {
   }, [selectedPokemon, graphData]);
 
   const selectedNode = graphData?.nodes?.find(
-    node => node.pokemon_id === selectedPokemon
+    (node) => node.pokemon_id === selectedPokemon,
   );
 
   // When a pokemon is selected, make sure its gen + types are never excluded —
@@ -193,18 +233,18 @@ export default function App() {
     if (!selectedNode) return;
     const { generation, types = [] } = selectedNode;
 
-    setExcludedGenerations(prev => {
+    setExcludedGenerations((prev) => {
       if (!generation || !prev.has(generation)) return prev;
       const next = new Set(prev);
       next.delete(generation);
       return next;
     });
 
-    setExcludedTypes(prev => {
-      const toRemove = types.filter(t => prev.has(t));
+    setExcludedTypes((prev) => {
+      const toRemove = types.filter((t) => prev.has(t));
       if (toRemove.length === 0) return prev;
       const next = new Set(prev);
-      toRemove.forEach(t => next.delete(t));
+      toRemove.forEach((t) => next.delete(t));
       return next;
     });
   }, [selectedNode]);
@@ -221,36 +261,40 @@ export default function App() {
   }, [selectedNode]);
 
   const similarityById = useMemo(
-    () => similarPokemon.reduce((acc, pokemon) => {
-      acc[pokemon.id] = pokemon.similarity;
-      return acc;
-    }, {}),
-    [similarPokemon]
+    () =>
+      similarPokemon.reduce((acc, pokemon) => {
+        acc[pokemon.id] = pokemon.similarity;
+        return acc;
+      }, {}),
+    [similarPokemon],
   );
 
   // Client-side filtering
   const filteredNodes = useMemo(() => {
     if (!graphData) return [];
-    return graphData.nodes.filter(node => {
+    return graphData.nodes.filter((node) => {
       const genOk =
-        excludedGenerations.size === 0 || !excludedGenerations.has(node.generation);
+        excludedGenerations.size === 0 ||
+        !excludedGenerations.has(node.generation);
       const typeOk =
         excludedTypes.size === 0 ||
-        (node.types || []).some(t => !excludedTypes.has(t));
+        (node.types || []).some((t) => !excludedTypes.has(t));
       return genOk && typeOk;
     });
   }, [graphData, excludedGenerations, excludedTypes]);
 
   const filteredNodeIdxSet = useMemo(
-    () => new Set(filteredNodes.map(n => n.id)),
-    [filteredNodes]
+    () => new Set(filteredNodes.map((n) => n.id)),
+    [filteredNodes],
   );
 
   const filteredLinks = useMemo(() => {
     if (!graphData) return [];
-    return graphData.links.filter(link => {
-      const src = typeof link.source === 'object' ? link.source.id : link.source;
-      const tgt = typeof link.target === 'object' ? link.target.id : link.target;
+    return graphData.links.filter((link) => {
+      const src =
+        typeof link.source === "object" ? link.source.id : link.source;
+      const tgt =
+        typeof link.target === "object" ? link.target.id : link.target;
       return filteredNodeIdxSet.has(src) && filteredNodeIdxSet.has(tgt);
     });
   }, [graphData, filteredNodeIdxSet]);
@@ -261,9 +305,11 @@ export default function App() {
     if (!graphData) return new Set();
     const result = new Set();
     for (const gen of excludedGenerations) {
-      const wouldAdd = graphData.nodes.filter(n =>
-        n.generation === gen &&
-        (excludedTypes.size === 0 || (n.types || []).some(t => !excludedTypes.has(t)))
+      const wouldAdd = graphData.nodes.filter(
+        (n) =>
+          n.generation === gen &&
+          (excludedTypes.size === 0 ||
+            (n.types || []).some((t) => !excludedTypes.has(t))),
       ).length;
       if (filteredNodes.length + wouldAdd > MAX_NODES) result.add(gen);
     }
@@ -274,10 +320,11 @@ export default function App() {
     if (!graphData) return new Set();
     const result = new Set();
     for (const type of excludedTypes) {
-      const wouldAdd = graphData.nodes.filter(n =>
-        !excludedGenerations.has(n.generation) &&
-        (n.types || []).includes(type) &&
-        (n.types || []).every(t => t === type || excludedTypes.has(t))
+      const wouldAdd = graphData.nodes.filter(
+        (n) =>
+          !excludedGenerations.has(n.generation) &&
+          (n.types || []).includes(type) &&
+          (n.types || []).every((t) => t === type || excludedTypes.has(t)),
       ).length;
       if (filteredNodes.length + wouldAdd > MAX_NODES) result.add(type);
     }
@@ -285,7 +332,8 @@ export default function App() {
   }, [graphData, excludedGenerations, excludedTypes, filteredNodes]);
 
   const activeFilterCount = excludedGenerations.size + excludedTypes.size;
-  const showCenteredLoading = loading || (selectedPokemon && selectedGraphLoading);
+  const showCenteredLoading =
+    loading || (selectedPokemon && selectedGraphLoading);
 
   return (
     <div className="app-fullscreen">
@@ -307,9 +355,9 @@ export default function App() {
       <button
         ref={settingsBtnRef}
         className="settings-btn"
-        onClick={() => setSettingsOpen(o => !o)}
+        onClick={() => setSettingsOpen((o) => !o)}
       >
-        ▼ FILTER{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+        ▼ FILTER{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
       </button>
 
       {settingsOpen && graphData && (
@@ -324,8 +372,12 @@ export default function App() {
           overMaxTypes={overMaxTypes}
           maxNodes={MAX_NODES}
           filteredCount={filteredNodes.length}
-          onToggleGeneration={(gen) => toggleGeneration(gen, filteredNodes, excludedTypes)}
-          onToggleType={(type) => toggleType(type, filteredNodes, excludedGenerations)}
+          onToggleGeneration={(gen) =>
+            toggleGeneration(gen, filteredNodes, excludedTypes)
+          }
+          onToggleType={(type) =>
+            toggleType(type, filteredNodes, excludedGenerations)
+          }
         />
       )}
 
