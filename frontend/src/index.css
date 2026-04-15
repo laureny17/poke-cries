@@ -58,6 +58,19 @@ code {
   background: #fff5f5;
 }
 
+.center-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #1a1a2e;
+  font-size: 28px;
+  letter-spacing: 0.4px;
+}
+
 .graph-root {
   position: relative;
   width: 100%;

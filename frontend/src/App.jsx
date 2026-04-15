@@ -15,6 +15,7 @@ export default function App() {
   const [similarPokemon, setSimilarPokemon] = useState([]);
   const [graphData, setGraphData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [selectedGraphLoading, setSelectedGraphLoading] = useState(false);
   const [error, setError] = useState(null);
   const [pokemonDetailsById, setPokemonDetailsById] = useState({});
 
@@ -150,21 +151,36 @@ export default function App() {
 
   // Load the larger neighborhood when selected pokemon changes
   useEffect(() => {
+    let isCancelled = false;
+
     const loadSimilar = async () => {
       if (!selectedPokemon || !graphData) {
         setSimilarPokemon([]);
+        setSelectedGraphLoading(false);
         return;
       }
+
+      setSelectedGraphLoading(true);
       try {
         // Fetch a large candidate pool so client-side gen/type filtering
         // still leaves enough pokemon to fill up to MAX_NODES in the selected view.
         const data = await apiClient.getSimilarPokemon(selectedPokemon, 800, 0.0);
+        if (isCancelled) return;
         setSimilarPokemon(data);
       } catch (err) {
         console.error('Error loading similar pokemon:', err);
+      } finally {
+        if (!isCancelled) {
+          setSelectedGraphLoading(false);
+        }
       }
     };
+
     loadSimilar();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [selectedPokemon, graphData]);
 
   const selectedNode = graphData?.nodes?.find(
@@ -269,6 +285,7 @@ export default function App() {
   }, [graphData, excludedGenerations, excludedTypes, filteredNodes]);
 
   const activeFilterCount = excludedGenerations.size + excludedTypes.size;
+  const showCenteredLoading = loading || (selectedPokemon && selectedGraphLoading);
 
   return (
     <div className="app-fullscreen">
@@ -312,8 +329,8 @@ export default function App() {
         />
       )}
 
-      {loading ? (
-        <div className="loading-overlay">Loading cry map...</div>
+      {showCenteredLoading ? (
+        <div className="center-loading">Loading ...</div>
       ) : graphData ? (
         <SimilarityGraph
           nodes={filteredNodes}
