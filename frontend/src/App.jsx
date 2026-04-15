@@ -198,11 +198,11 @@ export default function App() {
 
       setSelectedGraphLoading(true);
       try {
-        // Fetch a large candidate pool so client-side gen/type filtering
-        // still leaves enough pokemon to fill up to MAX_NODES in the selected view.
+        // Fetch a broad candidate pool so selected view can reflect filter changes
+        // without silently dropping less-similar pokemon.
         const data = await apiClient.getSimilarPokemon(
           selectedPokemon,
-          800,
+          2000,
           0.0,
         );
         if (isCancelled) return;

@@ -20,7 +20,6 @@ export const SimilarityGraph = ({
   selectedNode,
   pokemonDetailsById = {},
 }) => {
-  const MAX_SELECTED_NEIGHBORS = 150;
   const OVERVIEW_MAX_LINKS_PER_NODE = 5;
   const OVERVIEW_MIN_LINK_SIMILARITY = 0.42;
   const SELECTED_SPIRAL_ANGLE = Math.PI * (3 - Math.sqrt(5));
@@ -90,13 +89,11 @@ export const SimilarityGraph = ({
     const center = byId.get(selectedPokemon) || selectedNode;
 
     // Only include neighbors that are present in `nodes` (= filteredNodes from App).
-    // similarPokemon is sorted by similarity descending, so the slice naturally
-    // gives the most-similar pokemon that pass the current gen/type filters.
+    // similarPokemon is sorted by similarity descending.
     const neighbors = similarPokemon
       .filter((p) => p.id !== selectedPokemon)
       .map((p) => byId.get(p.id))
-      .filter(Boolean)
-      .slice(0, MAX_SELECTED_NEIGHBORS);
+      .filter(Boolean);
 
     return [center, ...neighbors];
   }, [nodes, selectedPokemon, selectedNode, similarPokemon]);
