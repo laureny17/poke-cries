@@ -3,10 +3,78 @@ Compute similarity scores between Pokémon cries using cosine similarity.
 """
 
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.manifold import SpectralEmbedding
-from sklearn.decomposition import PCA
 from typing import Dict, List, Tuple
+
+try:
+    from sklearn.manifold import SpectralEmbedding
+    from sklearn.cluster import SpectralClustering
+    from sklearn.decomposition import PCA
+except ImportError:
+    SpectralEmbedding = None
+    SpectralClustering = None
+    PCA = None
+
+
+def _pca_embedding(matrix: np.ndarray, n_components: int = 2) -> np.ndarray:
+    """Return a small PCA embedding using numpy-only SVD."""
+    if matrix.ndim != 2:
+        raise ValueError("Expected a 2D matrix for PCA embedding")
+
+    centered = matrix - np.mean(matrix, axis=0, keepdims=True)
+    if centered.shape[0] == 0:
+        return np.zeros((0, n_components), dtype=float)
+
+    _, _, vt = np.linalg.svd(centered, full_matrices=False)
+    components = vt[:n_components].T
+    embedding = centered @ components
+
+    if embedding.shape[1] < n_components:
+        padding = np.zeros((embedding.shape[0], n_components - embedding.shape[1]))
+        embedding = np.hstack([embedding, padding])
+
+    return embedding
+
+
+def _kmeans_labels(matrix: np.ndarray, cluster_count: int, iterations: int = 24) -> np.ndarray:
+    """Cluster rows with a deterministic numpy-only k-means fallback."""
+    n = matrix.shape[0]
+    if n == 0:
+        return np.zeros(0, dtype=int)
+
+    cluster_count = max(1, min(cluster_count, n))
+    squared_norms = np.sum(matrix * matrix, axis=1)
+    centers = [int(np.argmax(squared_norms))]
+
+    while len(centers) < cluster_count:
+        chosen = matrix[np.array(centers)]
+        distances = np.min(
+            np.sum((matrix[:, np.newaxis, :] - chosen[np.newaxis, :, :]) ** 2, axis=2),
+            axis=1,
+        )
+        centers.append(int(np.argmax(distances)))
+
+    centroids = matrix[np.array(centers)].copy()
+    labels = np.zeros(n, dtype=int)
+
+    for _ in range(iterations):
+        distances = np.sum(
+            (matrix[:, np.newaxis, :] - centroids[np.newaxis, :, :]) ** 2,
+            axis=2,
+        )
+        new_labels = np.argmin(distances, axis=1)
+        if np.array_equal(new_labels, labels):
+            break
+        labels = new_labels
+
+        for cluster_index in range(cluster_count):
+            members = matrix[labels == cluster_index]
+            if len(members) == 0:
+                farthest = int(np.argmax(np.min(distances, axis=1)))
+                centroids[cluster_index] = matrix[farthest]
+            else:
+                centroids[cluster_index] = np.mean(members, axis=0)
+
+    return labels
 
 
 def compute_cosine_similarity(vector1: np.ndarray, vector2: np.ndarray) -> float:
@@ -25,15 +93,12 @@ def compute_cosine_similarity(vector1: np.ndarray, vector2: np.ndarray) -> float
     Returns:
         Cosine similarity score
     """
-    # Reshape for sklearn's cosine_similarity
-    v1 = vector1.reshape(1, -1)
-    v2 = vector2.reshape(1, -1)
-
-    similarity = cosine_similarity(v1, v2)[0, 0]
-
-    # Convert to 0-1 range for easier interpretation
-    # (currently ranges from -1 to 1)
-    return float(similarity)
+    v1 = np.asarray(vector1, dtype=float).ravel()
+    v2 = np.asarray(vector2, dtype=float).ravel()
+    denominator = np.linalg.norm(v1) * np.linalg.norm(v2)
+    if denominator <= 1e-12:
+        return 0.0
+    return float(np.dot(v1, v2) / denominator)
 
 
 def compute_pairwise_similarities(
@@ -146,14 +211,14 @@ def compute_distance(similarity: float) -> float:
 def compute_overview_layout(
     pokemon_ids: List[int],
     similarities: Dict[Tuple[int, int], float],
-    neighbors_per_node: int = 10,
+    neighbors_per_node: int = 14,
 ) -> Dict[int, Dict[str, float]]:
     """
-    Compute a 2D overview embedding from the normalized similarity graph.
+    Compute a 2D overview layout from the normalized similarity graph.
 
-    The layout is derived from a sparsified affinity matrix so local cry
-    neighborhoods stay prominent while broader inter-cluster relationships
-    are still preserved.
+    The overview is intentionally clustered: first detect cry communities from
+    the nearest-neighbor affinity graph, then place each community as a distinct
+    island and arrange its members by local similarity inside that island.
     """
     if not pokemon_ids:
         return {}
@@ -163,6 +228,8 @@ def compute_overview_layout(
     n = len(sorted_ids)
 
     affinity = np.zeros((n, n), dtype=float)
+    local_scales = np.zeros(n, dtype=float)
+
     for i, pid1 in enumerate(sorted_ids):
         affinity[i, i] = 1.0
         row_scores = []
@@ -173,23 +240,136 @@ def compute_overview_layout(
             row_scores.append((pid2, max(0.0, min(1.0, score))))
 
         row_scores.sort(key=lambda item: item[1], reverse=True)
+        if row_scores:
+            scale_index = min(len(row_scores) - 1, max(4, neighbors_per_node // 2))
+            local_scales[i] = max(row_scores[scale_index][1], 1e-6)
+
         for pid2, score in row_scores[:neighbors_per_node]:
             j = index_by_id[pid2]
-            # Sharpen higher-similarity relationships so neighborhoods form cleanly.
-            affinity[i, j] = max(affinity[i, j], score ** 2.2)
+            # Adaptive local scaling preserves real neighborhoods while avoiding
+            # the "everything falls into 2-3 blobs" failure mode.
+            scaled = max(
+                0.0,
+                (score - local_scales[i]) / max(1.0 - local_scales[i], 1e-6),
+            )
+            affinity[i, j] = max(affinity[i, j], scaled ** 2.4)
 
     affinity = np.maximum(affinity, affinity.T)
     np.fill_diagonal(affinity, 1.0)
 
-    try:
-        embedding = SpectralEmbedding(
-            n_components=2,
-            affinity="precomputed",
-            random_state=42,
-        ).fit_transform(affinity)
-    except Exception:
-        # Fallback: PCA over the affinity rows still preserves broad structure.
-        embedding = PCA(n_components=2, random_state=42).fit_transform(affinity)
+    if n == 1:
+        return {sorted_ids[0]: {"x": 0.0, "y": 0.0}}
+
+    if n < 8:
+        cluster_labels = np.zeros(n, dtype=int)
+    else:
+        cluster_count = int(np.clip(round(np.sqrt(n) * 0.72), 4, 24))
+        cluster_count = min(cluster_count, n)
+        if SpectralClustering is not None:
+            try:
+                cluster_labels = SpectralClustering(
+                    n_clusters=cluster_count,
+                    affinity="precomputed",
+                    assign_labels="kmeans",
+                    random_state=42,
+                ).fit_predict(affinity)
+            except Exception:
+                cluster_labels = _kmeans_labels(affinity, cluster_count)
+        else:
+            cluster_labels = _kmeans_labels(affinity, cluster_count)
+
+    clusters = []
+    for label in sorted(set(int(label) for label in cluster_labels)):
+        indices = np.where(cluster_labels == label)[0]
+        if indices.size:
+            clusters.append(indices)
+
+    clusters.sort(key=lambda indices: (-len(indices), int(np.min(indices))))
+
+    local_positions = np.zeros((n, 2), dtype=float)
+    cluster_radii = []
+
+    for cluster_index, indices in enumerate(clusters):
+        size = len(indices)
+        if size == 1:
+            local_positions[indices[0]] = [0.0, 0.0]
+        elif size == 2:
+            local_positions[indices[0]] = [-0.35, 0.0]
+            local_positions[indices[1]] = [0.35, 0.0]
+        else:
+            cluster_affinity = affinity[np.ix_(indices, indices)]
+            if SpectralEmbedding is not None:
+                try:
+                    local_embedding = SpectralEmbedding(
+                        n_components=2,
+                        affinity="precomputed",
+                        random_state=42,
+                    ).fit_transform(cluster_affinity)
+                except Exception:
+                    local_embedding = _pca_embedding(cluster_affinity)
+            else:
+                local_embedding = _pca_embedding(cluster_affinity)
+
+            local_embedding = local_embedding - np.mean(local_embedding, axis=0)
+            span = np.ptp(local_embedding, axis=0)
+            max_span = max(float(np.max(span)), 1e-6)
+            local_positions[indices] = local_embedding / max_span
+
+        cluster_radii.append(0.34 + np.sqrt(size) * 0.055)
+
+    cluster_centers = np.zeros((len(clusters), 2), dtype=float)
+    golden_angle = np.pi * (3.0 - np.sqrt(5.0))
+
+    for cluster_index, indices in enumerate(clusters):
+        angle = cluster_index * golden_angle - np.pi / 2.0
+        ring = np.sqrt(cluster_index + 1)
+        radius = 1.15 + ring * 0.62
+        center = np.array([np.cos(angle) * radius, np.sin(angle) * radius])
+
+        # Push new islands away from earlier islands until their padded radii
+        # no longer overlap. This makes the overview read as neighborhoods
+        # instead of a single dense manifold.
+        for _ in range(80):
+            moved = False
+            for other_index in range(cluster_index):
+                delta = center - cluster_centers[other_index]
+                distance = float(np.linalg.norm(delta))
+                min_distance = (
+                    cluster_radii[cluster_index]
+                    + cluster_radii[other_index]
+                    + 0.72
+                )
+                if distance >= min_distance:
+                    continue
+
+                if distance < 1e-6:
+                    delta = np.array([np.cos(angle), np.sin(angle)])
+                    distance = 1.0
+
+                center = center + (delta / distance) * (min_distance - distance)
+                moved = True
+
+            if not moved:
+                break
+
+        cluster_centers[cluster_index] = center
+        local_scale = cluster_radii[cluster_index]
+        local_positions[indices] = center + local_positions[indices] * local_scale
+
+    embedding = local_positions
+
+    if len(clusters) <= 1:
+        if SpectralEmbedding is not None:
+            try:
+                embedding = SpectralEmbedding(
+                    n_components=2,
+                    affinity="precomputed",
+                    random_state=42,
+                ).fit_transform(affinity)
+            except Exception:
+                embedding = _pca_embedding(affinity)
+        else:
+            embedding = _pca_embedding(affinity)
 
     xs = embedding[:, 0]
     ys = embedding[:, 1]

@@ -1,6 +1,4 @@
-"""
-Flask API for Pokémon Cry Similarity.
-"""
+# using Flask API for pokemon cry similarity
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -21,7 +19,7 @@ from src.similarity import compute_overview_layout
 
 app = Flask(__name__)
 
-# Allow local dev frontends explicitly.
+# allow local dev frontends explicitly.
 cors_origins = os.getenv(
     "CORS_ORIGINS",
     "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173",
@@ -31,13 +29,13 @@ CORS(
     resources={r"/api/*": {"origins": [origin.strip() for origin in cors_origins]}},
 )
 
-# Global state
+# global state for cached similarity data (keeps the app less comutationally intensive)
 similarity_data = None
 DATA_FILE = Path(__file__).parent / "data" / "similarity_data.json"
 
 
+# spread tightly-clustered cosine scores into a range that is more visually useful for our visualization
 def _calibrate_similarity_scores(scores: list[float]) -> dict[float, float]:
-    """Spread tightly-clustered cosine scores into a more useful visual range."""
     if not scores:
         return {}
 
@@ -45,26 +43,27 @@ def _calibrate_similarity_scores(scores: list[float]) -> dict[float, float]:
     mean = float(np.mean(arr))
     std = float(np.std(arr))
 
-    # Handle degenerate case where all similarities are effectively identical.
+    # handle the degenerate case where all similarities are basically the same
     if std < 1e-8:
         return {score: 0.5 for score in scores}
 
     scaled = {}
     for score in scores:
         z = (score - mean) / (std * 1.5)
-        # Sigmoid maps to (0, 1) and amplifies small differences around the mean.
+        # sigmoid maps to (0, 1) and makes tiny gaps around the mean easier to see
         calibrated = 1.0 / (1.0 + np.exp(-z))
         scaled[score] = float(calibrated)
 
     return scaled
 
-
+# load similarity data into memory
 def load_data():
-    """Load similarity data into memory."""
     global similarity_data
     if similarity_data is None and DATA_FILE.exists():
+        # keep the json cached in memory
         similarity_data = load_similarity_data(DATA_FILE)
         if similarity_data is not None and not similarity_data.get("overview_layout"):
+            # generate layout once here so the matrix endpoint can reuse it later
             overview_layout = compute_overview_layout(
                 list(similarity_data.get("pokemon_info", {}).keys()),
                 similarity_data.get("similarities", {}),
@@ -73,20 +72,20 @@ def load_data():
             save_similarity_data(similarity_data, DATA_FILE)
 
 
+# health check
 @app.route("/api/health", methods=["GET"])
 def health():
-    """Health check endpoint."""
     return jsonify({"status": "ok"})
 
 
 @app.route("/api/pokemon", methods=["GET"])
 def get_pokemon_list():
     """
-    Get list of all Pokémon with their data.
+    get list of all pokemon w/ their data
 
-    Query parameters:
-    - generation: Filter by generation (1-9)
-    - limit: Maximum number to return
+    params:
+    - generation: filter by pokemon generation (1-9)
+    - limit: max number to return
     """
     load_data()
 
@@ -99,7 +98,7 @@ def get_pokemon_list():
     pokemon_list = []
 
     for pid, info in similarity_data["pokemon_info"].items():
-        # Filter by generation if specified
+        # skip entries outside the requested generation, if any
         if generation:
             gen_name = info.get("generation", "")
             if f"generation-{generation}" not in gen_name:
@@ -118,15 +117,15 @@ def get_pokemon_list():
 
 @app.route("/api/pokemon/<int:pokemon_id>", methods=["GET"])
 def get_pokemon(pokemon_id: int):
-    """Get details for a specific Pokémon."""
+    """get details for a specific pokémon."""
     load_data()
 
-    # Prefer cached matrix info when available.
+    # prefer cached matrix info when we already have it
     info = None
     if similarity_data is not None:
         info = similarity_data.get("pokemon_info", {}).get(pokemon_id)
 
-    # Fallback to live fetch from PokéAPI/cache if missing.
+    # fall back to live fetch from pokeapi/cache if the local data is missing
     pokemon_data = get_pokemon_data(pokemon_id)
     species_data = get_pokemon_species(pokemon_id)
     if not pokemon_data or not species_data:
@@ -168,11 +167,11 @@ def get_pokemon(pokemon_id: int):
 @app.route("/api/similarity/<int:pokemon_id>", methods=["GET"])
 def get_similarity_neighbors(pokemon_id: int):
     """
-    Get Pokémon most similar to the given Pokémon.
+    get pokémon most similar to the given pokémon
 
-    Query parameters:
-    - top_k: Number of similar Pokémon to return (default 20)
-    - min_similarity: Minimum similarity threshold (0-1, default 0.5)
+    params:
+    - top_k: number of similar pokemon to return (default 20)
+    - min_similarity: minimum similarity threshold (0-1, default 0.5)
     """
     load_data()
 
@@ -192,7 +191,8 @@ def get_similarity_neighbors(pokemon_id: int):
         min_similarity=0.0,
     )
 
-    # Build a calibration map from all available neighbors for this pokemon.
+    # build a calibration map from all available neighbors for this pokemon
+    # so we can spread out the scores more evenly for visualization purposes
     all_neighbor_scores = [
         score
         for (pid1, pid2), score in similarity_data["similarities"].items()
@@ -222,11 +222,11 @@ def get_similarity_neighbors(pokemon_id: int):
 @app.route("/api/similarity-matrix", methods=["GET"])
 def get_similarity_matrix():
     """
-    Get the complete similarity matrix for visualization.
+    get the complete similarity matrix for visualization
 
-    Query parameters:
-    - generation: Filter by generation (1-9)
-    - min_similarity: Minimum similarity threshold (0-1)
+    params:
+    - generation: filter by generation (1-9)
+    - min_similarity: minimum similarity threshold (0-1)
     """
     load_data()
 
@@ -236,7 +236,7 @@ def get_similarity_matrix():
     generation = request.args.get("generation", type=int)
     min_similarity = request.args.get("min_similarity", type=float, default=0.0)
 
-    # Filter Pokémon by generation if specified
+    # filter pokemon by generation first
     filtered_pokemon = {}
     for pid, info in similarity_data["pokemon_info"].items():
         if generation:
@@ -245,7 +245,7 @@ def get_similarity_matrix():
                 continue
         filtered_pokemon[pid] = info
 
-    # Build nodes
+    # build nodes for the frontend graph view
     nodes = []
     pid_to_idx = {}
     for idx, (pid, info) in enumerate(filtered_pokemon.items()):
@@ -258,7 +258,7 @@ def get_similarity_matrix():
             **info,
         })
 
-    # Build links (edges only above min_similarity)
+    # only keep edges that clear the similarity threshold
     links = []
     for (pid1, pid2), score in similarity_data["similarities"].items():
         if score < min_similarity:
@@ -267,7 +267,7 @@ def get_similarity_matrix():
         if pid1 not in pid_to_idx or pid2 not in pid_to_idx:
             continue
 
-        if pid1 < pid2:  # Avoid duplicates
+        if pid1 < pid2:  # avoid duplicates
             links.append({
                 "source": pid_to_idx[pid1],
                 "target": pid_to_idx[pid2],
@@ -281,9 +281,9 @@ def get_similarity_matrix():
     })
 
 
+# get list of all generations along w/ counts of how many pokemon they have (for filtering UI)
 @app.route("/api/generations", methods=["GET"])
 def get_generations():
-    """Get list of available generations."""
     generations = []
     for gen_id in range(1, 10):
         pokemon_ids = get_generation_pokemon(gen_id)
@@ -300,16 +300,16 @@ def get_generations():
 @app.route("/api/admin/build-matrix", methods=["POST"])
 def build_similarity_matrix_endpoint():
     """
-    Build the similarity matrix (computationally expensive).
+    build the similarity matrix (computationally expensive!!)
 
-    POST data:
-    - generation: Generation to build for (default: all)
-    - force: Force rebuild even if cached
+    post data:
+    - generation: the pokemon generation to build for (default: all)
+    - force: force rebuild even if cached
     """
     generation = request.json.get("generation")
     force = request.json.get("force", False)
 
-    # Check if already built
+    # skip rebuilds unless the caller explicitly forces one
     if not force and DATA_FILE.exists():
         return jsonify({"error": "Data already built. Set force=true to rebuild"}), 400
 
@@ -317,13 +317,13 @@ def build_similarity_matrix_endpoint():
         if generation:
             pokemon_ids = get_generation_pokemon(generation)
         else:
-            # Get all Pokémon
-            pokemon_ids = list(range(1, 1026))  # All Pokémon up to Gen 9
+            # otherwise rebuild the full set of pokémon ids
+            pokemon_ids = list(range(1, 1026))  # all pokemon up to gen 9
 
         data = build_similarity_matrix(pokemon_ids)
         save_similarity_data(data, DATA_FILE)
 
-        # Reload into memory
+        # reload into memory so the next request sees the fresh matrix
         global similarity_data
         similarity_data = data
 

@@ -1,5 +1,5 @@
 """
-Audio processing utilities for extracting perceptual features from Pokémon cries.
+Audio processing utilities for extracting perceptual features from Pokemon cries.
 """
 
 import numpy as np
@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Optional
 
 
-# Informational only — no longer encoded in filenames.
+# Informational only - no longer encoded in filenames.
 # Increment when the feature layout changes; use `manage.py build --force`
 # (which clears the vectors directory) to pick up the new format.
-FEATURE_VERSION = 3
+FEATURE_VERSION = 4
 
 
 def _l2_norm(v: np.ndarray) -> np.ndarray:
@@ -20,63 +20,178 @@ def _l2_norm(v: np.ndarray) -> np.ndarray:
     return v / norm if norm > 1e-8 else v
 
 
-def extract_audio_features(audio_path: Path, n_mfcc: int = 13) -> Optional[np.ndarray]:
+def _center_and_norm(v: np.ndarray) -> np.ndarray:
+    """Mean-center a feature group before L2 normalization."""
+    centered = v - np.mean(v)
+    return _l2_norm(centered)
+
+
+def _summary_stats(matrix: np.ndarray) -> np.ndarray:
     """
-    Extract a combined perceptual feature vector that captures both timbre and pitch.
+    Summarize a frame-wise feature matrix with robust descriptive statistics.
+    """
+    if matrix.ndim == 1:
+        matrix = matrix[np.newaxis, :]
 
-    Feature groups (each L2-normalised independently before concatenation):
-      - MFCCs mean + std  (26 values)  — timbre / spectral texture,  weight 1.0
-      - Chroma mean + std (24 values)  — pitch-class content,         weight 1.5
-      - Spectral centroid + rolloff
-        mean + std         (4 values)  — brightness / pitch height,   weight 1.5
+    q25 = np.percentile(matrix, 25, axis=1)
+    q50 = np.percentile(matrix, 50, axis=1)
+    q75 = np.percentile(matrix, 75, axis=1)
+    return np.concatenate(
+        [
+            np.mean(matrix, axis=1),
+            np.std(matrix, axis=1),
+            q25,
+            q50,
+            q75,
+        ]
+    )
 
-    Weighting explanation
-    ─────────────────────
-    Standard MFCCs are *deliberately* pitch-invariant (great for speech
-    recognition, bad for perceptual cry similarity). By down-weighting the
-    MFCC group and up-weighting the pitch-sensitive groups, the cosine
-    similarity score will better match what you hear:
 
-        cos(A,B) ≈ 0.24 · timbre_sim + 0.38 · pitch_class_sim + 0.38 · brightness_sim
+def extract_audio_features(audio_path: Path, n_mfcc: int = 16) -> Optional[np.ndarray]:
+    """
+    Extract a perceptual feature vector that gives more weight to timbre,
+    spectral texture, and envelope shape than raw duration.
+
+    Feature groups (each L2-normalized independently before concatenation):
+      - MFCC + delta stats: broad timbre body and contour
+      - Spectral texture stats: contrast / flatness / brightness / noisiness
+      - Pitch stats: chroma + tonnetz for tonal center and harmonic color
+      - Envelope stats: RMS / onset strength / energy-shape landmarks
+      - Duration stats: lightly weighted so clip length does not dominate
     """
     try:
         y, sr = librosa.load(audio_path, sr=22050)
         if len(y) == 0:
             return None
 
-        # Pick the largest power-of-2 FFT window that actually fits in the signal.
-        # This avoids "n_fft too large" warnings for very short cries (~6–40 ms).
-        # Floor at 32 so we always have something to work with.
-        n_fft = int(2 ** np.floor(np.log2(max(len(y), 32))))
-        n_fft = min(n_fft, 2048)          # cap at 2048 for normal-length cries
+        # Normalize level and pad short cries so spectral features remain stable
+        # even when the raw sample is only a few milliseconds long.
+        y = librosa.util.normalize(y)
+        target_len = max(len(y), 1024)
+        y = librosa.util.fix_length(y, size=target_len)
+
+        # Pick the largest power-of-2 FFT window that comfortably fits.
+        n_fft = int(2 ** np.floor(np.log2(max(len(y), 256))))
+        n_fft = min(n_fft, 2048)
         hop_length = max(1, n_fft // 4)
 
-        # --- Timbre: MFCCs (pitch-invariant spectral envelope) ---
-        mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc,
-                                     n_fft=n_fft, hop_length=hop_length)
-        mfcc_stats = np.concatenate([np.mean(mfccs, axis=1), np.std(mfccs, axis=1)])
+        mfccs = librosa.feature.mfcc(
+            y=y,
+            sr=sr,
+            n_mfcc=n_mfcc,
+            n_fft=n_fft,
+            hop_length=hop_length,
+        )
+        mfcc_delta = librosa.feature.delta(mfccs, mode="nearest")
+        mfcc_group = np.concatenate(
+            [_summary_stats(mfccs), _summary_stats(mfcc_delta)]
+        )
 
-        # --- Pitch class: chroma STFT (more robust than CQT for short signals) ---
-        chroma = librosa.feature.chroma_stft(y=y, sr=sr,
-                                             n_fft=n_fft, hop_length=hop_length)
-        chroma_stats = np.concatenate([np.mean(chroma, axis=1), np.std(chroma, axis=1)])
+        contrast = librosa.feature.spectral_contrast(
+            y=y,
+            sr=sr,
+            n_fft=n_fft,
+            hop_length=hop_length,
+        )
+        centroid = librosa.feature.spectral_centroid(
+            y=y,
+            sr=sr,
+            n_fft=n_fft,
+            hop_length=hop_length,
+        )
+        bandwidth = librosa.feature.spectral_bandwidth(
+            y=y,
+            sr=sr,
+            n_fft=n_fft,
+            hop_length=hop_length,
+        )
+        rolloff = librosa.feature.spectral_rolloff(
+            y=y,
+            sr=sr,
+            roll_percent=0.9,
+            n_fft=n_fft,
+            hop_length=hop_length,
+        )
+        flatness = librosa.feature.spectral_flatness(
+            y=y,
+            n_fft=n_fft,
+            hop_length=hop_length,
+        )
+        zcr = librosa.feature.zero_crossing_rate(y, hop_length=hop_length)
+        texture_group = np.concatenate(
+            [
+                _summary_stats(contrast),
+                _summary_stats(centroid),
+                _summary_stats(bandwidth),
+                _summary_stats(rolloff),
+                _summary_stats(flatness),
+                _summary_stats(zcr),
+            ]
+        )
 
-        # --- Pitch height / brightness: spectral centroid + rolloff ---
-        centroid = librosa.feature.spectral_centroid(y=y, sr=sr,
-                                                     n_fft=n_fft, hop_length=hop_length)
-        rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr, roll_percent=0.85,
-                                                   n_fft=n_fft, hop_length=hop_length)
-        spectral_stats = np.array([
-            float(np.mean(centroid)), float(np.std(centroid)),
-            float(np.mean(rolloff)),  float(np.std(rolloff)),
-        ])
+        harmonic, _ = librosa.effects.hpss(y)
+        chroma = librosa.feature.chroma_stft(
+            y=harmonic,
+            sr=sr,
+            n_fft=n_fft,
+            hop_length=hop_length,
+        )
+        tonnetz = librosa.feature.tonnetz(chroma=chroma, sr=sr)
+        pitch_group = np.concatenate(
+            [_summary_stats(chroma), _summary_stats(tonnetz)]
+        )
 
-        # Normalise each group so scale differences don't drown anything out,
-        # then apply weights so pitch features matter more than timbre.
+        rms = librosa.feature.rms(y=y, frame_length=n_fft, hop_length=hop_length)
+        onset_env = librosa.onset.onset_strength(
+            y=y,
+            sr=sr,
+            hop_length=hop_length,
+        )
+        onset_stats = np.array(
+            [
+                float(np.mean(onset_env)),
+                float(np.std(onset_env)),
+                float(np.max(onset_env)) if onset_env.size else 0.0,
+            ]
+        )
+
+        cumulative_energy = np.cumsum(np.square(y))
+        if cumulative_energy.size == 0 or cumulative_energy[-1] <= 1e-10:
+            energy_shape = np.array([0.0, 0.0, 0.0], dtype=float)
+        else:
+            cumulative_energy = cumulative_energy / cumulative_energy[-1]
+            energy_shape = np.array(
+                [
+                    float(np.searchsorted(cumulative_energy, 0.2) / len(cumulative_energy)),
+                    float(np.searchsorted(cumulative_energy, 0.5) / len(cumulative_energy)),
+                    float(np.searchsorted(cumulative_energy, 0.85) / len(cumulative_energy)),
+                ],
+                dtype=float,
+            )
+
+        envelope_group = np.concatenate(
+            [
+                _summary_stats(rms),
+                onset_stats,
+                energy_shape,
+            ]
+        )
+
+        duration = len(y) / sr
+        duration_group = np.array(
+            [
+                float(np.log1p(duration)),
+                float(duration),
+            ],
+            dtype=float,
+        )
+
         return np.concatenate([
-            _l2_norm(mfcc_stats)     * 1.0,
-            _l2_norm(chroma_stats)   * 1.5,
-            _l2_norm(spectral_stats) * 1.5,
+            _center_and_norm(mfcc_group) * 1.25,
+            _center_and_norm(texture_group) * 1.85,
+            _center_and_norm(pitch_group) * 0.9,
+            _center_and_norm(envelope_group) * 1.15,
+            _center_and_norm(duration_group) * 0.12,
         ])
 
     except Exception as e:
@@ -106,10 +221,10 @@ def extract_mfcc_vector(audio_path: Path, n_mfcc: int = 13) -> Optional[np.ndarr
 def get_audio_duration(audio_path: Path) -> Optional[float]:
     """
     Get the duration of an audio file in seconds.
-    
+
     Args:
         audio_path: Path to the audio file
-        
+
     Returns:
         Duration in seconds or None if loading failed
     """

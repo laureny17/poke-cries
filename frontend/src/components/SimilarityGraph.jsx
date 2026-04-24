@@ -48,6 +48,37 @@ export const SimilarityGraph = ({
     };
   }, []);
 
+  const getNodeTypeColors = useCallback((node) => {
+    const [typeA, typeB] = (node.types || []).filter(Boolean);
+    const colorA = TYPE_COLORS[typeA] || "#7ec8e3";
+    const colorB = TYPE_COLORS[typeB] || colorA;
+
+    if (!typeA) {
+      return ["#7ec8e3", "#7ec8e3"];
+    }
+
+    if (!typeB || typeB === typeA) {
+      return [colorA, colorA];
+    }
+
+    return [colorA, colorB];
+  }, []);
+
+  const selectedNodeColors = useMemo(() => {
+    if (!selectedPokemon) {
+      return ["#7ec8e3", "#7ec8e3"];
+    }
+
+    const selectedSourceNode =
+      selectedNode || nodes.find((node) => node.pokemon_id === selectedPokemon);
+
+    if (!selectedSourceNode) {
+      return ["#7ec8e3", "#7ec8e3"];
+    }
+
+    return getNodeTypeColors(selectedSourceNode);
+  }, [getNodeTypeColors, nodes, selectedNode, selectedPokemon]);
+
   const similarityStats = useMemo(() => {
     const values = similarPokemon
       .map((pokemon) => pokemon.similarity)
@@ -251,16 +282,30 @@ export const SimilarityGraph = ({
         return 0;
       }
 
+      const similarity = getSimilarityScore(node);
       const relativeSimilarity = getRelativeSimilarityScore(node);
       const touchingDistance =
         getNodeRadius({ pokemon_id: selectedPokemon }) +
         getNodeRadius(node) +
         2;
+      const absoluteDissimilarity = 1 - similarity;
+      const relativeDissimilarity = 1 - relativeSimilarity;
 
-      // Best visible match (relative = 1) sits right next to the selected pokemon.
-      return touchingDistance + Math.pow(1 - relativeSimilarity, 1.75) * 130;
+      // Use both absolute and in-neighborhood dissimilarity so truly weak
+      // matches can peel off into their own outer bands instead of collapsing
+      // into one visually uniform ring.
+      return (
+        touchingDistance +
+        Math.pow(absoluteDissimilarity, 2.15) * 280 +
+        Math.pow(relativeDissimilarity, 1.55) * 190
+      );
     },
-    [selectedPokemon, getRelativeSimilarityScore, getNodeRadius],
+    [
+      selectedPokemon,
+      getSimilarityScore,
+      getRelativeSimilarityScore,
+      getNodeRadius,
+    ],
   );
 
   useEffect(() => {
@@ -272,7 +317,40 @@ export const SimilarityGraph = ({
     const height = svgRef.current.clientHeight;
     const centerX = width / 2;
     const centerY = height / 2;
-    const plotRadius = Math.min(width, height) * 0.42;
+    const overviewPadding = 24;
+
+    const overviewCoords = focusedNodes
+      .map((node) => ({
+        x:
+          typeof node.overview_x === "number" &&
+          Number.isFinite(node.overview_x)
+            ? node.overview_x
+            : null,
+        y:
+          typeof node.overview_y === "number" &&
+          Number.isFinite(node.overview_y)
+            ? node.overview_y
+            : null,
+      }))
+      .filter((coord) => coord.x != null && coord.y != null);
+
+    const overviewBounds =
+      overviewCoords.length > 0
+        ? {
+            minX: Math.min(...overviewCoords.map((coord) => coord.x)),
+            maxX: Math.max(...overviewCoords.map((coord) => coord.x)),
+            minY: Math.min(...overviewCoords.map((coord) => coord.y)),
+            maxY: Math.max(...overviewCoords.map((coord) => coord.y)),
+          }
+        : null;
+    const overviewSpanX = Math.max(
+      (overviewBounds?.maxX ?? 1) - (overviewBounds?.minX ?? -1),
+      1e-6,
+    );
+    const overviewSpanY = Math.max(
+      (overviewBounds?.maxY ?? 1) - (overviewBounds?.minY ?? -1),
+      1e-6,
+    );
 
     const neighborOrder = focusedNodes
       .filter((node) => node.pokemon_id !== selectedPokemon)
@@ -301,11 +379,15 @@ export const SimilarityGraph = ({
       const baseDistance = getTargetDistance(node) + spiralOffset;
       const overviewX =
         typeof node.overview_x === "number"
-          ? centerX + node.overview_x * plotRadius
+          ? overviewPadding +
+            ((node.overview_x - (overviewBounds?.minX ?? -1)) / overviewSpanX) *
+              Math.max(width - overviewPadding * 2, 1)
           : centerX;
       const overviewY =
         typeof node.overview_y === "number"
-          ? centerY + node.overview_y * plotRadius
+          ? overviewPadding +
+            ((node.overview_y - (overviewBounds?.minY ?? -1)) / overviewSpanY) *
+              Math.max(height - overviewPadding * 2, 1)
           : centerY;
 
       return {
@@ -316,6 +398,12 @@ export const SimilarityGraph = ({
         angle,
         baseDistance,
         distance: baseDistance,
+        anchorX: selectedPokemon
+          ? centerX + Math.cos(angle) * baseDistance
+          : overviewX,
+        anchorY: selectedPokemon
+          ? centerY + Math.sin(angle) * baseDistance
+          : overviewY,
         tx: selectedPokemon
           ? centerX + Math.cos(angle) * baseDistance
           : overviewX,
@@ -363,10 +451,17 @@ export const SimilarityGraph = ({
 
     const layoutLinks = focusedLinks.map((link) => ({ ...link }));
 
+    const nodesByPokemonId = new Map(
+      layoutNodes.map((node) => [node.pokemon_id, node]),
+    );
+
+    layoutLinks.forEach((link) => {
+      link.source = nodesByPokemonId.get(link.source);
+      link.target = nodesByPokemonId.get(link.target);
+    });
+
     if (selectedPokemon) {
-      const centerNode = layoutNodes.find(
-        (node) => node.pokemon_id === selectedPokemon,
-      );
+      const centerNode = nodesByPokemonId.get(selectedPokemon);
       if (centerNode) {
         centerNode.fx = centerX;
         centerNode.fy = centerY;
@@ -421,15 +516,6 @@ export const SimilarityGraph = ({
 
     let simulation;
     if (selectedPokemon) {
-      const nodesByPokemonId = new Map(
-        layoutNodes.map((node) => [node.pokemon_id, node]),
-      );
-
-      layoutLinks.forEach((link) => {
-        link.source = nodesByPokemonId.get(link.source);
-        link.target = nodesByPokemonId.get(link.target);
-      });
-
       // Selected mode is static: nodes stay exactly at the positions implied by
       // their individual similarity scores, with a light collision/radial pass
       // to reduce overlap without collapsing into a generic force blob.
@@ -455,18 +541,17 @@ export const SimilarityGraph = ({
     } else {
       simulation = d3
         .forceSimulation(layoutNodes)
-        .force("x", d3.forceX((node) => node.tx).strength(0.22))
-        .force("y", d3.forceY((node) => node.ty).strength(0.22))
+        .force("x", d3.forceX((node) => node.anchorX).strength(0.95))
+        .force("y", d3.forceY((node) => node.anchorY).strength(0.95))
         .force(
           "collision",
           d3
             .forceCollide()
-            .radius((node) => getNodeRadius(node) + 3)
-            .strength(0.95),
+            .radius((node) => getNodeRadius(node) + 2)
+            .strength(0.9),
         )
-        .force("charge", d3.forceManyBody().strength(-8))
-        .alphaDecay(0.06)
-        .velocityDecay(0.45);
+        .alphaDecay(0.12)
+        .velocityDecay(0.78);
     }
 
     simulationRef.current = simulation;
@@ -514,8 +599,17 @@ export const SimilarityGraph = ({
           0.65,
         );
 
-        return 0.05 + normalized * 0.22;
+        return 0.02 + normalized * 0.08;
       });
+
+    if (selectedPokemon) {
+      link.style("stroke", (d) => {
+        const targetX = typeof d.target?.x === "number" ? d.target.x : centerX;
+        return targetX < centerX
+          ? selectedNodeColors[0]
+          : selectedNodeColors[1];
+      });
+    }
 
     const node = g
       .append("g")
@@ -611,7 +705,7 @@ export const SimilarityGraph = ({
     });
 
     // Pre-settle silently before rendering.
-    simulation.tick(selectedPokemon ? 35 : 180);
+    simulation.tick(selectedPokemon ? 35 : 120);
     simulation.stop();
 
     if (selectedPokemon) {
@@ -631,7 +725,11 @@ export const SimilarityGraph = ({
         const dx = node.x - centerX;
         const dy = node.y - centerY;
         const actualDistance = Math.hypot(dx, dy);
-        const correctedDistance = Math.max(actualDistance, minAllowedDistance);
+        const correctedDistance = Math.max(
+          actualDistance,
+          node.baseDistance,
+          minAllowedDistance,
+        );
         const scale = correctedDistance / Math.max(actualDistance, 1e-6);
 
         node.x = centerX + dx * scale;
@@ -683,6 +781,60 @@ export const SimilarityGraph = ({
         node.y = centerY + Math.sin(node.angle) * distance;
         node.tx = node.x;
         node.ty = node.y;
+      }
+    } else {
+      for (let pass = 0; pass < 18; pass += 1) {
+        let moved = false;
+
+        for (let i = 0; i < layoutNodes.length; i += 1) {
+          const a = layoutNodes[i];
+          for (let j = i + 1; j < layoutNodes.length; j += 1) {
+            const b = layoutNodes[j];
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let distance = Math.hypot(dx, dy);
+            const minSeparation = a.radius + b.radius + 3;
+
+            if (distance >= minSeparation) {
+              continue;
+            }
+
+            moved = true;
+            if (distance < 1e-6) {
+              dx = j % 2 === 0 ? 1 : -1;
+              dy = i % 2 === 0 ? 1 : -1;
+              distance = Math.hypot(dx, dy);
+            }
+
+            const push = (minSeparation - distance) / 2;
+            const nx = dx / distance;
+            const ny = dy / distance;
+
+            a.x -= nx * push;
+            a.y -= ny * push;
+            b.x += nx * push;
+            b.y += ny * push;
+          }
+        }
+
+        layoutNodes.forEach((node) => {
+          node.x = node.anchorX + (node.x - node.anchorX) * 0.9;
+          node.y = node.anchorY + (node.y - node.anchorY) * 0.9;
+          node.x = Math.max(
+            overviewPadding + node.radius,
+            Math.min(width - overviewPadding - node.radius, node.x),
+          );
+          node.y = Math.max(
+            overviewPadding + node.radius,
+            Math.min(height - overviewPadding - node.radius, node.y),
+          );
+          node.tx = node.x;
+          node.ty = node.y;
+        });
+
+        if (!moved) {
+          break;
+        }
       }
     }
 
