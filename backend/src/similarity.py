@@ -228,10 +228,12 @@ def compute_overview_layout(
     n = len(sorted_ids)
 
     affinity = np.zeros((n, n), dtype=float)
+    raw_similarity = np.zeros((n, n), dtype=float)
     local_scales = np.zeros(n, dtype=float)
 
     for i, pid1 in enumerate(sorted_ids):
         affinity[i, i] = 1.0
+        raw_similarity[i, i] = 1.0
         row_scores = []
         for pid2 in sorted_ids:
             if pid1 == pid2:
@@ -246,6 +248,7 @@ def compute_overview_layout(
 
         for pid2, score in row_scores[:neighbors_per_node]:
             j = index_by_id[pid2]
+            raw_similarity[i, j] = score
             # Adaptive local scaling preserves real neighborhoods while avoiding
             # the "everything falls into 2-3 blobs" failure mode.
             scaled = max(
@@ -255,7 +258,9 @@ def compute_overview_layout(
             affinity[i, j] = max(affinity[i, j], scaled ** 2.4)
 
     affinity = np.maximum(affinity, affinity.T)
+    raw_similarity = np.maximum(raw_similarity, raw_similarity.T)
     np.fill_diagonal(affinity, 1.0)
+    np.fill_diagonal(raw_similarity, 1.0)
 
     if n == 1:
         return {sorted_ids[0]: {"x": 0.0, "y": 0.0}}
@@ -286,23 +291,78 @@ def compute_overview_layout(
 
     clusters.sort(key=lambda indices: (-len(indices), int(np.min(indices))))
 
-    # Compute intra-cluster connectivity representativeness for each pokemon
+    # Spectral clustering can still produce one visually dominant island. Split
+    # oversized islands locally so the overview remains a readable set of
+    # neighborhoods without changing the underlying pairwise similarities.
+    target_cluster_size = max(36, int(np.ceil(n / max(cluster_count, 1) * 1.6)))
+    balanced_clusters = []
+    for indices in clusters:
+        if len(indices) <= target_cluster_size:
+            balanced_clusters.append(indices)
+            continue
+
+        split_count = int(np.ceil(len(indices) / target_cluster_size))
+        split_count = max(2, min(split_count, len(indices)))
+        local_affinity = affinity[np.ix_(indices, indices)]
+        try:
+            if SpectralEmbedding is None:
+                raise RuntimeError("SpectralEmbedding unavailable")
+            split_embedding = SpectralEmbedding(
+                n_components=2,
+                affinity="precomputed",
+                random_state=42,
+            ).fit_transform(local_affinity)
+        except Exception:
+            split_embedding = _pca_embedding(local_affinity)
+
+        split_embedding = split_embedding - np.mean(split_embedding, axis=0)
+        split_order = np.lexsort((split_embedding[:, 1], split_embedding[:, 0]))
+        for local_chunk in np.array_split(split_order, split_count):
+            split_indices = indices[local_chunk]
+            if split_indices.size:
+                balanced_clusters.append(np.sort(split_indices))
+
+    clusters = sorted(
+        balanced_clusters,
+        key=lambda cluster_indices: (-len(cluster_indices), int(np.min(cluster_indices))),
+    )
+
+    # Representativeness is a cluster-relative percentile rank based on average
+    # raw cry similarity to other members of that same final visual cluster.
+    # This makes the tooltip answer "how central is this Pokemon in this island?"
+    # instead of exposing tiny internal graph weights.
     representativeness = np.zeros(n, dtype=float)
-    for cluster_idx, indices in enumerate(clusters):
+    cluster_id_by_index = np.zeros(n, dtype=int)
+    cluster_size_by_index = np.ones(n, dtype=int)
+    representative_by_index = np.zeros(n, dtype=int)
+    for cluster_id, indices in enumerate(clusters):
+        cluster_id_by_index[indices] = cluster_id
+        cluster_size_by_index[indices] = len(indices)
         if len(indices) > 1:
-            # For each pokemon in the cluster, compute average affinity to cluster members
+            raw_scores = []
             for i in indices:
-                cluster_affinity_values = affinity[i, indices]
-                # Average affinity to all cluster members (excluding self)
-                other_members = cluster_affinity_values[cluster_affinity_values != 1.0]
+                cluster_similarity_values = raw_similarity[i, indices]
+                other_members = cluster_similarity_values[indices != i]
                 if len(other_members) > 0:
-                    representativeness[i] = float(np.mean(other_members))
+                    raw_scores.append(float(np.mean(other_members)))
                 else:
-                    # Fallback: use all cluster members including self (will be ~1.0)
-                    representativeness[i] = float(np.mean(cluster_affinity_values))
+                    raw_scores.append(float(np.mean(cluster_similarity_values)))
+
+            raw_arr = np.array(raw_scores, dtype=float)
+            representative_local_index = int(np.argmax(raw_arr))
+            representative_pid = sorted_ids[int(indices[representative_local_index])]
+            representative_by_index[indices] = representative_pid
+
+            if float(np.max(raw_arr) - np.min(raw_arr)) < 1e-9:
+                representativeness[indices] = 1.0
+            else:
+                order = np.argsort(raw_arr, kind="mergesort")
+                ranks = np.empty(len(raw_arr), dtype=float)
+                ranks[order] = np.arange(len(raw_arr), dtype=float)
+                representativeness[indices] = ranks / max(len(raw_arr) - 1, 1)
         else:
-            # Single-pokemon cluster: assign neutral representativeness
-            representativeness[indices[0]] = 0.5
+            representativeness[indices[0]] = 1.0
+            representative_by_index[indices[0]] = sorted_ids[int(indices[0])]
 
     local_positions = np.zeros((n, 2), dtype=float)
     cluster_radii = []
@@ -405,7 +465,10 @@ def compute_overview_layout(
         layout[pid] = {
             "x": x,
             "y": y,
-            "representativeness": float(representativeness[index])
+            "representativeness": float(representativeness[index]),
+            "cluster_id": int(cluster_id_by_index[index]),
+            "cluster_size": int(cluster_size_by_index[index]),
+            "cluster_representative_id": int(representative_by_index[index]),
         }
 
     return layout

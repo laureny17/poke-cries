@@ -248,13 +248,20 @@ def load_similarity_data(input_file: Path) -> Optional[Dict]:
         pokemon_info_raw = data.get("pokemon_info", {})
         pokemon_info = {int(pid): info for pid, info in pokemon_info_raw.items()}
         overview_layout_raw = data.get("overview_layout", {})
-        overview_layout = {
-            int(pid): {
+        overview_layout = {}
+        for pid, position in overview_layout_raw.items():
+            layout_position = {
                 "x": float(position.get("x", 0.0)),
                 "y": float(position.get("y", 0.0)),
             }
-            for pid, position in overview_layout_raw.items()
-        }
+            if "representativeness" in position:
+                layout_position["representativeness"] = float(
+                    position.get("representativeness", 0.5),
+                )
+            for key in ("cluster_id", "cluster_size", "cluster_representative_id"):
+                if key in position:
+                    layout_position[key] = int(position[key])
+            overview_layout[int(pid)] = layout_position
 
         return {
             "feature_version": int(data.get("feature_version", FEATURE_VERSION)),

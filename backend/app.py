@@ -62,8 +62,47 @@ def load_data():
     if similarity_data is None and DATA_FILE.exists():
         # keep the json cached in memory
         similarity_data = load_similarity_data(DATA_FILE)
-        if similarity_data is not None and not similarity_data.get("overview_layout"):
-            # generate layout once here so the matrix endpoint can reuse it later
+        overview_layout = (
+            similarity_data.get("overview_layout", {})
+            if similarity_data is not None
+            else {}
+        )
+        missing_representativeness = bool(overview_layout) and any(
+            "representativeness" not in position
+            for position in overview_layout.values()
+            if isinstance(position, dict)
+        )
+        missing_cluster_metadata = bool(overview_layout) and any(
+            "cluster_size" not in position
+            for position in overview_layout.values()
+            if isinstance(position, dict)
+        )
+        representativeness_values = [
+            position.get("representativeness")
+            for position in overview_layout.values()
+            if isinstance(position, dict)
+            and isinstance(position.get("representativeness"), (int, float))
+        ]
+        stale_representativeness = bool(representativeness_values) and max(
+            representativeness_values,
+        ) < 0.05
+        cluster_sizes = [
+            position.get("cluster_size")
+            for position in overview_layout.values()
+            if isinstance(position, dict)
+            and isinstance(position.get("cluster_size"), (int, float))
+        ]
+        oversized_cached_cluster = bool(cluster_sizes) and max(
+            cluster_sizes,
+        ) > max(160, len(overview_layout) * 0.2)
+        if similarity_data is not None and (
+            not overview_layout
+            or missing_representativeness
+            or missing_cluster_metadata
+            or stale_representativeness
+            or oversized_cached_cluster
+        ):
+            # Generate or upgrade layout once here so the matrix endpoint can reuse it later.
             overview_layout = compute_overview_layout(
                 list(similarity_data.get("pokemon_info", {}).keys()),
                 similarity_data.get("similarities", {}),
@@ -256,6 +295,9 @@ def get_similarity_matrix():
             "overview_x": similarity_data.get("overview_layout", {}).get(pid, {}).get("x"),
             "overview_y": similarity_data.get("overview_layout", {}).get(pid, {}).get("y"),
             "representativeness": similarity_data.get("overview_layout", {}).get(pid, {}).get("representativeness"),
+            "cluster_id": similarity_data.get("overview_layout", {}).get(pid, {}).get("cluster_id"),
+            "cluster_size": similarity_data.get("overview_layout", {}).get(pid, {}).get("cluster_size"),
+            "cluster_representative_id": similarity_data.get("overview_layout", {}).get(pid, {}).get("cluster_representative_id"),
             **info,
         })
 

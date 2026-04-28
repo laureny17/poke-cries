@@ -8,6 +8,25 @@ import React, {
 import * as d3 from "d3";
 import { TYPE_COLORS } from "../typeColors";
 
+const titleCase = (value) =>
+  String(value || "")
+    .replace(/-/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
+const formatGeneration = (value) => {
+  const raw = String(value || "");
+  const roman = raw.replace("generation-", "");
+  return roman ? `Gen ${roman.toUpperCase()}` : "";
+};
+
+const formatDescription = (value) => {
+  const text = String(value || "").trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "";
+};
+
 export const SimilarityGraph = ({
   nodes,
   links,
@@ -701,6 +720,7 @@ export const SimilarityGraph = ({
         similarity: d.similarity,
         relativeSimilarity: d.relativeSimilarity,
         representativeness: d.representativeness,
+        clusterSize: d.cluster_size,
         types: details.types || d.types || [],
         generation: details.generation || d.generation,
         habitat: details.habitat,
@@ -1012,14 +1032,18 @@ export const SimilarityGraph = ({
           className="graph-tooltip"
           style={{ left: `${tooltip.x}px`, top: `${tooltip.y}px` }}
         >
-          <div className="graph-tooltip-name">{tooltip.name}</div>
+          <div className="graph-tooltip-name">{titleCase(tooltip.name)}</div>
           <div className="graph-tooltip-meta">#{tooltip.id}</div>
-          {selectedPokemon && typeof tooltip.similarity === "number" ? (
+          {selectedPokemon &&
+          tooltip.id !== selectedPokemon &&
+          typeof tooltip.similarity === "number" ? (
             <div className="graph-tooltip-meta">
               Similarity: {(tooltip.similarity * 100).toFixed(1)}%
             </div>
           ) : null}
-          {selectedPokemon && typeof tooltip.relativeSimilarity === "number" ? (
+          {selectedPokemon &&
+          tooltip.id !== selectedPokemon &&
+          typeof tooltip.relativeSimilarity === "number" ? (
             <div className="graph-tooltip-meta">
               Relative Similarity:{" "}
               {(tooltip.relativeSimilarity * 100).toFixed(1)}%
@@ -1028,26 +1052,34 @@ export const SimilarityGraph = ({
           {!selectedPokemon &&
           typeof tooltip.representativeness === "number" ? (
             <div className="graph-tooltip-meta">
-              Cry Representativeness{" "}
+              Cluster Representativeness{" "}
               {(tooltip.representativeness * 100).toFixed(1)}%
+            </div>
+          ) : null}
+          {!selectedPokemon && tooltip.clusterSize ? (
+            <div className="graph-tooltip-meta">
+              Cluster Size: {tooltip.clusterSize} Pokemon
             </div>
           ) : null}
           {tooltip.types && tooltip.types.length > 0 ? (
             <div className="graph-tooltip-meta">
-              Types: {tooltip.types.join(", ")}
+              Types: {tooltip.types.map(titleCase).join(", ")}
             </div>
           ) : null}
           {tooltip.generation ? (
             <div className="graph-tooltip-meta">
-              Generation:{" "}
-              {String(tooltip.generation).replace("generation-", "Gen ")}
+              Generation: {formatGeneration(tooltip.generation)}
             </div>
           ) : null}
           {tooltip.habitat ? (
-            <div className="graph-tooltip-meta">Habitat: {tooltip.habitat}</div>
+            <div className="graph-tooltip-meta">
+              Habitat: {titleCase(tooltip.habitat)}
+            </div>
           ) : null}
           {tooltip.description ? (
-            <div className="graph-tooltip-meta">{tooltip.description}</div>
+            <div className="graph-tooltip-meta">
+              {formatDescription(tooltip.description)}
+            </div>
           ) : null}
         </div>
       ) : null}
