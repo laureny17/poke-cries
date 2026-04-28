@@ -49,6 +49,7 @@ export const SimilarityGraph = ({
   const simulationRef = useRef();
   const wrapperRef = useRef();
   const [tooltip, setTooltip] = useState(null);
+  const [clusterTooltip, setClusterTooltip] = useState(null);
 
   const getNodeTypeFill = useCallback((node) => {
     const [typeA, typeB] = (node.types || []).filter(Boolean);
@@ -632,6 +633,129 @@ export const SimilarityGraph = ({
       });
     }
 
+    const clusterOutlineLayer = g.append("g").attr("class", "cluster-outlines");
+
+    const getClusterOutlinePath = (cluster) => {
+      const points = [];
+      const padding = 15;
+      const steps = 10;
+
+      cluster.nodes.forEach((clusterNode) => {
+        const radius = clusterNode.radius + padding;
+        for (let step = 0; step < steps; step += 1) {
+          const angle = (Math.PI * 2 * step) / steps;
+          points.push([
+            clusterNode.x + Math.cos(angle) * radius,
+            clusterNode.y + Math.sin(angle) * radius,
+          ]);
+        }
+      });
+
+      const hull = d3.polygonHull(points);
+      if (!hull || hull.length < 3) {
+        return null;
+      }
+
+      return d3.line().curve(d3.curveCardinalClosed.tension(0.72))(hull);
+    };
+
+    let clusterOutline = null;
+    let clusterHitArea = null;
+    let overviewClusters = [];
+
+    if (!selectedPokemon) {
+      const clustersById = new Map();
+      layoutNodes.forEach((layoutNode) => {
+        if (layoutNode.cluster_id == null) {
+          return;
+        }
+
+        if (!clustersById.has(layoutNode.cluster_id)) {
+          clustersById.set(layoutNode.cluster_id, []);
+        }
+        clustersById.get(layoutNode.cluster_id).push(layoutNode);
+      });
+
+      overviewClusters = Array.from(clustersById, ([clusterId, clusterNodes]) => {
+        const representative =
+          clusterNodes.find(
+            (clusterNode) =>
+              clusterNode.pokemon_id === clusterNodes[0].cluster_representative_id,
+          ) ||
+          clusterNodes
+            .slice()
+            .sort(
+              (a, b) =>
+                (b.representativeness || 0) - (a.representativeness || 0),
+            )[0];
+        const scores = clusterNodes
+          .map((clusterNode) => clusterNode.representativeness)
+          .filter((score) => typeof score === "number");
+
+        return {
+          id: clusterId,
+          nodes: clusterNodes,
+          size: clusterNodes.length,
+          representative,
+          averageRepresentativeness:
+            scores.length > 0
+              ? scores.reduce((sum, score) => sum + score, 0) / scores.length
+              : null,
+        };
+      });
+
+      const clusterGroup = clusterOutlineLayer
+        .selectAll("g")
+        .data(overviewClusters)
+        .enter()
+        .append("g")
+        .attr("class", "cluster-outline-group");
+
+      clusterOutline = clusterGroup
+        .append("path")
+        .attr("class", "cluster-outline")
+        .attr("fill", "none");
+
+      clusterHitArea = clusterGroup
+        .append("path")
+        .attr("class", "cluster-outline-hit-area")
+        .attr("fill", "none")
+        .on("mouseenter", (event, cluster) => {
+          const bounds = wrapperRef.current?.getBoundingClientRect();
+          if (!bounds) {
+            return;
+          }
+
+          setClusterTooltip({
+            x: event.clientX - bounds.left + 14,
+            y: event.clientY - bounds.top - 12,
+            size: cluster.size,
+            representativeName: cluster.representative?.name,
+            representativeId: cluster.representative?.pokemon_id,
+            averageRepresentativeness: cluster.averageRepresentativeness,
+          });
+        })
+        .on("mousemove", (event) => {
+          const bounds = wrapperRef.current?.getBoundingClientRect();
+          if (!bounds) {
+            return;
+          }
+
+          setClusterTooltip((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  x: event.clientX - bounds.left + 14,
+                  y: event.clientY - bounds.top - 12,
+                }
+              : previous,
+          );
+        })
+        .on("mouseleave", () => {
+          setClusterTooltip(null);
+        });
+    }
+
     const node = g
       .append("g")
       .selectAll("g")
@@ -720,7 +844,6 @@ export const SimilarityGraph = ({
         similarity: d.similarity,
         relativeSimilarity: d.relativeSimilarity,
         representativeness: d.representativeness,
-        clusterSize: d.cluster_size,
         types: details.types || d.types || [],
         generation: details.generation || d.generation,
         habitat: details.habitat,
@@ -779,6 +902,7 @@ export const SimilarityGraph = ({
 
     svg.on("click", () => {
       setTooltip(null);
+      setClusterTooltip(null);
     });
 
     // Pre-settle silently before rendering.
@@ -916,6 +1040,17 @@ export const SimilarityGraph = ({
     }
 
     // Render the already-settled initial positions.
+    const updateClusterOutlines = () => {
+      if (!clusterOutline || !clusterHitArea) {
+        return;
+      }
+
+      clusterOutline.attr("d", getClusterOutlinePath);
+      clusterHitArea.attr("d", getClusterOutlinePath);
+    };
+
+    updateClusterOutlines();
+
     link
       .attr("x1", (d) => d.source.x)
       .attr("y1", (d) => d.source.y)
@@ -930,6 +1065,7 @@ export const SimilarityGraph = ({
         .attr("y1", (d) => d.source.y)
         .attr("x2", (d) => d.target.x)
         .attr("y2", (d) => d.target.y);
+      updateClusterOutlines();
       node.attr("transform", (d) => `translate(${d.x},${d.y})`);
     });
 
@@ -1056,11 +1192,6 @@ export const SimilarityGraph = ({
               {(tooltip.representativeness * 100).toFixed(1)}%
             </div>
           ) : null}
-          {!selectedPokemon && tooltip.clusterSize ? (
-            <div className="graph-tooltip-meta">
-              Cluster Size: {tooltip.clusterSize} Pokemon
-            </div>
-          ) : null}
           {tooltip.types && tooltip.types.length > 0 ? (
             <div className="graph-tooltip-meta">
               Types: {tooltip.types.map(titleCase).join(", ")}
@@ -1079,6 +1210,31 @@ export const SimilarityGraph = ({
           {tooltip.description ? (
             <div className="graph-tooltip-meta">
               {formatDescription(tooltip.description)}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {clusterTooltip ? (
+        <div
+          className="graph-tooltip graph-cluster-tooltip"
+          style={{ left: `${clusterTooltip.x}px`, top: `${clusterTooltip.y}px` }}
+        >
+          <div className="graph-tooltip-name">Cluster</div>
+          <div className="graph-tooltip-meta">
+            Pokemon: {clusterTooltip.size}
+          </div>
+          {clusterTooltip.representativeName ? (
+            <div className="graph-tooltip-meta">
+              Most Representative: {titleCase(clusterTooltip.representativeName)}
+              {clusterTooltip.representativeId
+                ? ` #${clusterTooltip.representativeId}`
+                : ""}
+            </div>
+          ) : null}
+          {typeof clusterTooltip.averageRepresentativeness === "number" ? (
+            <div className="graph-tooltip-meta">
+              Avg. Representativeness:{" "}
+              {(clusterTooltip.averageRepresentativeness * 100).toFixed(1)}%
             </div>
           ) : null}
         </div>

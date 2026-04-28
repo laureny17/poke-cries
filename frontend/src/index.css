@@ -94,6 +94,22 @@ code {
   stroke: #7ec8e3;
 }
 
+.cluster-outline {
+  stroke: rgba(26, 26, 46, 0.42);
+  stroke-width: 1.5;
+  stroke-dasharray: 7 6;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.cluster-outline-hit-area {
+  stroke: transparent;
+  stroke-width: 14;
+  vector-effect: non-scaling-stroke;
+  cursor: help;
+  pointer-events: stroke;
+}
+
 .graph-tooltip {
   position: absolute;
   z-index: 20;
@@ -105,6 +121,11 @@ code {
   border-radius: 4px;
   background: #ffffff;
   box-shadow: 4px 4px 0px #d0d4e0;
+}
+
+.graph-cluster-tooltip {
+  border-color: #a8b0c8;
+  box-shadow: 4px 4px 0px #a8b0c8;
 }
 
 .graph-tooltip-name {
