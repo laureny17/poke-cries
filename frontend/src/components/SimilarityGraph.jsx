@@ -19,6 +19,8 @@ export const SimilarityGraph = ({
   similarityById = {},
   selectedNode,
   pokemonDetailsById = {},
+  tutorialStep = null,
+  tutorialSelectedStarter = null,
 }) => {
   const OVERVIEW_MAX_LINKS_PER_NODE = 5;
   const OVERVIEW_MIN_LINK_SIMILARITY = 0.42;
@@ -658,6 +660,7 @@ export const SimilarityGraph = ({
         id: d.pokemon_id,
         similarity: d.similarity,
         relativeSimilarity: d.relativeSimilarity,
+        representativeness: d.representativeness,
         types: details.types || d.types || [],
         generation: details.generation || d.generation,
         habitat: details.habitat,
@@ -882,6 +885,21 @@ export const SimilarityGraph = ({
           .scale(Math.max(0.15, Math.min(1.05, fitScale)))
           .translate(-centerX, -centerY),
       );
+    } else if (tutorialStep === 2 && tutorialSelectedStarter) {
+      // Auto-zoom to tutorial starter pokemon
+      const tutorialNode = layoutNodes.find(
+        (node) => node.pokemon_id === tutorialSelectedStarter,
+      );
+      if (tutorialNode) {
+        const zoomScale = 2.5;
+        svg.call(
+          zoom.transform,
+          d3.zoomIdentity
+            .translate(width / 2, height / 2)
+            .scale(zoomScale)
+            .translate(-tutorialNode.x, -tutorialNode.y),
+        );
+      }
     }
 
     return () => {
@@ -899,6 +917,8 @@ export const SimilarityGraph = ({
     getNodeRadius,
     getTargetDistance,
     getSimilarityScore,
+    tutorialStep,
+    tutorialSelectedStarter,
   ]);
 
   useEffect(() => {
@@ -936,14 +956,19 @@ export const SimilarityGraph = ({
         >
           <div className="graph-tooltip-name">{tooltip.name}</div>
           <div className="graph-tooltip-meta">#{tooltip.id}</div>
-          {typeof tooltip.similarity === "number" ? (
+          {selectedPokemon && typeof tooltip.similarity === "number" ? (
             <div className="graph-tooltip-meta">
               Similarity {(tooltip.similarity * 100).toFixed(1)}%
             </div>
           ) : null}
-          {typeof tooltip.relativeSimilarity === "number" ? (
+          {selectedPokemon && typeof tooltip.relativeSimilarity === "number" ? (
             <div className="graph-tooltip-meta">
               Relative {(tooltip.relativeSimilarity * 100).toFixed(1)}%
+            </div>
+          ) : null}
+          {!selectedPokemon && typeof tooltip.representativeness === "number" ? (
+            <div className="graph-tooltip-meta">
+              Cry Representativeness {(tooltip.representativeness * 100).toFixed(1)}%
             </div>
           ) : null}
           {tooltip.types && tooltip.types.length > 0 ? (

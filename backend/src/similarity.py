@@ -286,6 +286,24 @@ def compute_overview_layout(
 
     clusters.sort(key=lambda indices: (-len(indices), int(np.min(indices))))
 
+    # Compute intra-cluster connectivity representativeness for each pokemon
+    representativeness = np.zeros(n, dtype=float)
+    for cluster_idx, indices in enumerate(clusters):
+        if len(indices) > 1:
+            # For each pokemon in the cluster, compute average affinity to cluster members
+            for i in indices:
+                cluster_affinity_values = affinity[i, indices]
+                # Average affinity to all cluster members (excluding self)
+                other_members = cluster_affinity_values[cluster_affinity_values != 1.0]
+                if len(other_members) > 0:
+                    representativeness[i] = float(np.mean(other_members))
+                else:
+                    # Fallback: use all cluster members including self (will be ~1.0)
+                    representativeness[i] = float(np.mean(cluster_affinity_values))
+        else:
+            # Single-pokemon cluster: assign neutral representativeness
+            representativeness[indices[0]] = 0.5
+
     local_positions = np.zeros((n, 2), dtype=float)
     cluster_radii = []
 
@@ -384,6 +402,10 @@ def compute_overview_layout(
     for index, pid in enumerate(sorted_ids):
         x = ((float(xs[index]) - x_min) / x_span) * 2.0 - 1.0
         y = ((float(ys[index]) - y_min) / y_span) * 2.0 - 1.0
-        layout[pid] = {"x": x, "y": y}
+        layout[pid] = {
+            "x": x,
+            "y": y,
+            "representativeness": float(representativeness[index])
+        }
 
     return layout

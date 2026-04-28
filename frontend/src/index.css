@@ -344,3 +344,445 @@ code {
   border-radius: 4px;
   pointer-events: none;
 }
+
+/* ── Intro Screen ────────────────────────────────────────────────────────── */
+.intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(4px);
+  animation: fade-in 0.3s ease-out;
+}
+
+.intro-modal {
+  background: #ffffff;
+  border: 3px solid #d0d4e0;
+  border-radius: 8px;
+  padding: 40px;
+  max-width: 450px;
+  text-align: center;
+  box-shadow: 8px 8px 0 #d0d4e0;
+  animation: slide-up 0.4s ease-out;
+}
+
+.intro-title {
+  font-family: "VT323", monospace;
+  font-size: 32px;
+  color: #1a1a2e;
+  margin-bottom: 16px;
+  letter-spacing: 1px;
+}
+
+.intro-subtitle {
+  font-family: "VT323", monospace;
+  font-size: 18px;
+  color: #555870;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.intro-description {
+  font-family: "VT323", monospace;
+  font-size: 16px;
+  color: #777890;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
+.intro-button {
+  font-family: "VT323", monospace;
+  font-size: 18px;
+  padding: 10px 24px;
+  background: #f0f2ff;
+  color: #1a1a2e;
+  border: 2px solid #d0d4e0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.5px;
+}
+
+.intro-button:hover {
+  background: #e0e4ff;
+  border-color: #a0a8c8;
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 #d0d4e0;
+}
+
+/* ── Tutorial ────────────────────────────────────────────────────────────── */
+.tutorial-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 27;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.92);
+  animation: fade-in 0.3s ease-out;
+}
+
+.tutorial-modal {
+  background: #ffffff;
+  border: 3px solid #d0d4e0;
+  border-radius: 8px;
+  padding: 40px;
+  max-width: 520px;
+  text-align: center;
+  box-shadow: 8px 8px 0 #d0d4e0;
+  animation: slide-up 0.4s ease-out;
+}
+
+.tutorial-title {
+  font-family: "VT323", monospace;
+  font-size: 28px;
+  color: #1a1a2e;
+  margin-bottom: 16px;
+  letter-spacing: 1px;
+}
+
+.tutorial-text {
+  font-family: "VT323", monospace;
+  font-size: 16px;
+  color: #555870;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.pokeball-picker {
+  display: flex;
+  gap: 30px;
+  justify-content: center;
+  align-items: flex-end;
+  margin: 30px 0;
+}
+
+.pokeball-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  min-height: 140px;
+}
+
+.pokeball {
+  width: 100px;
+  height: 100px;
+  cursor: pointer;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+  transition: transform 0.1s ease;
+  border: none;
+  padding: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-size: 100px 100px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-color: transparent;
+  flex-shrink: 0;
+}
+
+.pokeball:hover:not(.selected):not(.inactive) {
+  animation: pokeball-shake 0.8s ease-in-out infinite;
+}
+
+@keyframes pokeball-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  12% {
+    transform: translateX(-2px);
+  }
+  24% {
+    transform: translateX(2px);
+  }
+  36% {
+    transform: translateX(-2px);
+  }
+  50%, 100% {
+    transform: translateX(0);
+  }
+}
+
+.pokeball.selected {
+  animation: pokeball-grow 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  filter: drop-shadow(0 0 15px #ffd700);
+}
+
+@keyframes pokeball-grow {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1.3);
+  }
+}
+
+.pokeball.closing {
+  animation: pokeball-shrink 0.6s cubic-bezier(0.64, 0.44, 0.66, 0.34) forwards;
+}
+
+@keyframes pokeball-shrink {
+  0% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.pokeball.inactive {
+  opacity: 0.4;
+  filter: grayscale(100%) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.05));
+  cursor: default;
+}
+
+.pokeball.open {
+  filter: drop-shadow(0 0 10px rgba(100, 100, 100, 0.4));
+}
+
+.starter-sprite {
+  width: 120px;
+  height: 120px;
+  image-rendering: pixelated;
+  animation: sprite-emerge 1s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: absolute;
+  pointer-events: none;
+}
+
+@keyframes sprite-emerge {
+  0% {
+    opacity: 0;
+    filter: brightness(3) blur(8px);
+    transform: scale(0.3) translateY(-20px);
+  }
+  70% {
+    opacity: 0.9;
+    filter: brightness(1.5) blur(2px);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1) blur(0);
+    transform: scale(1) translateY(0);
+  }
+}
+
+.starter-name {
+  font-family: "VT323", monospace;
+  font-size: 14px;
+  color: #1a1a2e;
+  margin-top: 4px;
+  letter-spacing: 0.5px;
+}
+
+.tutorial-skip-btn {
+  font-family: "VT323", monospace;
+  font-size: 14px;
+  padding: 6px 12px;
+  background: #f8f8fc;
+  color: #999bb0;
+  border: 1px solid #d0d4e0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 20px;
+  letter-spacing: 0.3px;
+}
+
+.tutorial-skip-btn:hover {
+  background: #f0f2ff;
+  border-color: #bbb;
+  color: #777890;
+}
+
+/* ── Tutorial Step 2: Spotlight ──────────────────────────────────────────── */
+.tutorial-step2 {
+  position: fixed;
+  inset: 0;
+  z-index: 27;
+  pointer-events: none;
+}
+
+.tutorial-dim-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.88);
+  z-index: 23;
+  pointer-events: none;
+}
+
+.tutorial-highlight-box {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 120px;
+  height: 120px;
+  border: 3px solid #ffd700;
+  border-radius: 50%;
+  z-index: 24;
+  box-shadow: 0 0 20px #ffd700, inset 0 0 20px rgba(255, 215, 0, 0.3);
+  animation: highlight-pulse 1.5s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes highlight-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px #ffd700, inset 0 0 20px rgba(255, 215, 0, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px #ffd700, inset 0 0 30px rgba(255, 215, 0, 0.5);
+  }
+}
+
+.tutorial-cursor {
+  animation: cursor-bounce 1.2s ease-in-out infinite;
+  font-size: 32px;
+  pointer-events: none;
+}
+
+@keyframes cursor-bounce {
+  0%, 100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(8px, 8px);
+  }
+  50% {
+    transform: translate(0, 16px);
+  }
+  75% {
+    transform: translate(-8px, 8px);
+  }
+}
+
+.tutorial-dialog {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ffffff;
+  border: 3px solid #d0d4e0;
+  border-radius: 8px;
+  padding: 20px 24px;
+  max-width: 400px;
+  box-shadow: 8px 8px 0 #d0d4e0;
+  z-index: 28;
+  animation: slide-up 0.4s ease-out;
+  pointer-events: auto;
+}
+
+.tutorial-dialog-step2 {
+  text-align: center;
+}
+
+.tutorial-dialog-step2 .tutorial-title {
+  font-size: 20px;
+  margin-bottom: 8px;
+}
+
+/* ── Tutorial Step 3: Explanation ────────────────────────────────────────── */
+.tutorial-explanation {
+  text-align: left;
+  background: #f8f8fc;
+  border: 2px solid #e8eaf0;
+  border-radius: 4px;
+  padding: 16px;
+  margin: 20px 0;
+}
+
+.tutorial-list {
+  font-family: "VT323", monospace;
+  font-size: 15px;
+  color: #555870;
+  list-style-position: inside;
+  margin: 12px 0;
+  line-height: 1.6;
+}
+
+.tutorial-list li {
+  margin-bottom: 6px;
+}
+
+.tutorial-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.tutorial-continue-btn {
+  font-family: "VT323", monospace;
+  font-size: 16px;
+  padding: 10px 24px;
+  background: #d4f4d4;
+  color: #1a1a2e;
+  border: 2px solid #90cc90;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.5px;
+}
+
+.tutorial-continue-btn:hover:not(:disabled) {
+  background: #c0ecc0;
+  border-color: #70b070;
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 #90cc90;
+}
+
+.tutorial-continue-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #e8e8e8;
+  border-color: #c0c0c0;
+}
+
+.tutorial-complete-btn {
+  font-family: "VT323", monospace;
+  font-size: 16px;
+  padding: 10px 24px;
+  background: #d4f4d4;
+  color: #1a1a2e;
+  border: 2px solid #90cc90;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.5px;
+}
+
+.tutorial-complete-btn:hover {
+  background: #c0ecc0;
+  border-color: #70b070;
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 #90cc90;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

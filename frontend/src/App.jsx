@@ -8,6 +8,8 @@ import React, {
 import { SimilarityGraph } from "./components/SimilarityGraph";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { IntroScreen } from "./components/IntroScreen";
+import { Tutorial } from "./components/Tutorial";
 import { apiClient } from "./api/client";
 import "./App.css";
 
@@ -25,6 +27,21 @@ export default function App() {
   const [error, setError] = useState(null);
   const [pokemonDetailsById, setPokemonDetailsById] = useState({});
 
+  // Intro & Tutorial state
+  const [showIntro, setShowIntro] = useState(true);
+  const [showTutorial, setShowTutorial] = useState(() => {
+    // Check localStorage to see if tutorial has been completed
+    try {
+      const completed = window.localStorage.getItem(
+        "poke-cries:onboarding-complete:v1"
+      );
+      return !completed;
+    } catch {
+      return true; // Show tutorial if localStorage fails
+    }
+  });
+  const [tutorialStep, setTutorialStep] = useState(1);
+
   // Filter state — empty Set means "no filter applied" (show all).
   // Starts restrictive (all gens excluded); initialised to Gen I once data loads.
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -33,6 +50,31 @@ export default function App() {
 
   const settingsBtnRef = useRef();
   const settingsPanelRef = useRef();
+
+  // Handle intro screen dismissal
+  const handleDismissIntro = useCallback(() => {
+    setShowIntro(false);
+  }, []);
+
+  // Handle tutorial completion
+  const handleCompleteTutorial = useCallback(() => {
+    try {
+      window.localStorage.setItem("poke-cries:onboarding-complete:v1", "true");
+    } catch (err) {
+      console.warn("Failed to set onboarding flag in localStorage:", err);
+    }
+    setShowTutorial(false);
+  }, []);
+
+  // Handle tutorial skip
+  const handleSkipTutorial = useCallback(() => {
+    try {
+      window.localStorage.setItem("poke-cries:onboarding-complete:v1", "true");
+    } catch (err) {
+      console.warn("Failed to set onboarding flag in localStorage:", err);
+    }
+    setShowTutorial(false);
+  }, []);
 
   // Close settings panel on outside click
   useEffect(() => {
@@ -339,11 +381,28 @@ export default function App() {
     <div className="app-fullscreen">
       {error && <div className="error-overlay">Error: {error}</div>}
 
-      {graphData && (
+      {showIntro && !loading && graphData && (
+        <IntroScreen onDismiss={handleDismissIntro} />
+      )}
+
+      {showTutorial &&
+        graphData &&
+        !showIntro && (
+          <Tutorial
+            graphData={graphData}
+            selectedPokemon={selectedPokemon}
+            tutorialStep={tutorialStep}
+            onStepChange={setTutorialStep}
+            onComplete={handleCompleteTutorial}
+            onSkip={handleSkipTutorial}
+          />
+        )}
+
+      {graphData && !showTutorial && (
         <SearchBar nodes={graphData.nodes} onSelect={setSelectedPokemon} />
       )}
 
-      {selectedPokemon ? (
+      {selectedPokemon && !showTutorial ? (
         <button
           className="overview-btn"
           onClick={() => setSelectedPokemon(null)}
@@ -356,11 +415,12 @@ export default function App() {
         ref={settingsBtnRef}
         className="settings-btn"
         onClick={() => setSettingsOpen((o) => !o)}
+        style={{ display: showTutorial ? "none" : "block" }}
       >
         ▼ FILTER{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
       </button>
 
-      {settingsOpen && graphData && (
+      {settingsOpen && graphData && !showTutorial && (
         <SettingsPanel
           ref={settingsPanelRef}
           nodes={graphData.nodes}
@@ -395,6 +455,8 @@ export default function App() {
           similarityById={similarityById}
           selectedNode={selectedNode}
           pokemonDetailsById={pokemonDetailsById}
+          tutorialStep={tutorialStep}
+          tutorialSelectedStarter={showTutorial ? selectedPokemon : null}
         />
       ) : (
         <div className="loading-overlay">No data available</div>

@@ -255,6 +255,7 @@ def get_similarity_matrix():
             "pokemon_id": pid,
             "overview_x": similarity_data.get("overview_layout", {}).get(pid, {}).get("x"),
             "overview_y": similarity_data.get("overview_layout", {}).get(pid, {}).get("y"),
+            "representativeness": similarity_data.get("overview_layout", {}).get(pid, {}).get("representativeness"),
             **info,
         })
 
