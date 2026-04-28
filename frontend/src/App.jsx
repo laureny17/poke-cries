@@ -29,18 +29,9 @@ export default function App() {
 
   // Intro & Tutorial state
   const [showIntro, setShowIntro] = useState(true);
-  const [showTutorial, setShowTutorial] = useState(() => {
-    // Check localStorage to see if tutorial has been completed
-    try {
-      const completed = window.localStorage.getItem(
-        "poke-cries:onboarding-complete:v1"
-      );
-      return !completed;
-    } catch {
-      return true; // Show tutorial if localStorage fails
-    }
-  });
+  const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(1);
+  const [tutorialSelectedStarter, setTutorialSelectedStarter] = useState(null);
 
   // Filter state — empty Set means "no filter applied" (show all).
   // Starts restrictive (all gens excluded); initialised to Gen I once data loads.
@@ -51,29 +42,31 @@ export default function App() {
   const settingsBtnRef = useRef();
   const settingsPanelRef = useRef();
 
-  // Handle intro screen dismissal
-  const handleDismissIntro = useCallback(() => {
+  const handleStartExploring = useCallback(() => {
     setShowIntro(false);
+    setShowTutorial(false);
+    setTutorialStep(1);
+    setTutorialSelectedStarter(null);
   }, []);
 
-  // Handle tutorial completion
+  const handleStartTutorial = useCallback(() => {
+    setShowIntro(false);
+    setShowTutorial(true);
+    setTutorialStep(1);
+    setTutorialSelectedStarter(null);
+    setSelectedPokemon(null);
+  }, []);
+
   const handleCompleteTutorial = useCallback(() => {
-    try {
-      window.localStorage.setItem("poke-cries:onboarding-complete:v1", "true");
-    } catch (err) {
-      console.warn("Failed to set onboarding flag in localStorage:", err);
-    }
     setShowTutorial(false);
+    setTutorialStep(1);
+    setTutorialSelectedStarter(null);
   }, []);
 
-  // Handle tutorial skip
   const handleSkipTutorial = useCallback(() => {
-    try {
-      window.localStorage.setItem("poke-cries:onboarding-complete:v1", "true");
-    } catch (err) {
-      console.warn("Failed to set onboarding flag in localStorage:", err);
-    }
     setShowTutorial(false);
+    setTutorialStep(1);
+    setTutorialSelectedStarter(null);
   }, []);
 
   // Close settings panel on outside click
@@ -382,23 +375,25 @@ export default function App() {
       {error && <div className="error-overlay">Error: {error}</div>}
 
       {showIntro && !loading && graphData && (
-        <IntroScreen onDismiss={handleDismissIntro} />
+        <IntroScreen
+          onStartExploring={handleStartExploring}
+          onStartTutorial={handleStartTutorial}
+        />
       )}
 
-      {showTutorial &&
-        graphData &&
-        !showIntro && (
-          <Tutorial
-            graphData={graphData}
-            selectedPokemon={selectedPokemon}
-            tutorialStep={tutorialStep}
-            onStepChange={setTutorialStep}
-            onComplete={handleCompleteTutorial}
-            onSkip={handleSkipTutorial}
-          />
-        )}
+      {showTutorial && graphData && !showIntro && (
+        <Tutorial
+          graphData={graphData}
+          selectedPokemon={selectedPokemon}
+          tutorialStep={tutorialStep}
+          onStepChange={setTutorialStep}
+          onStarterChange={setTutorialSelectedStarter}
+          onComplete={handleCompleteTutorial}
+          onSkip={handleSkipTutorial}
+        />
+      )}
 
-      {graphData && !showTutorial && (
+      {graphData && !showTutorial && !showIntro && (
         <SearchBar nodes={graphData.nodes} onSelect={setSelectedPokemon} />
       )}
 
@@ -415,12 +410,12 @@ export default function App() {
         ref={settingsBtnRef}
         className="settings-btn"
         onClick={() => setSettingsOpen((o) => !o)}
-        style={{ display: showTutorial ? "none" : "block" }}
+        style={{ display: showTutorial || showIntro ? "none" : "block" }}
       >
         ▼ FILTER{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
       </button>
 
-      {settingsOpen && graphData && !showTutorial && (
+      {settingsOpen && graphData && !showTutorial && !showIntro && (
         <SettingsPanel
           ref={settingsPanelRef}
           nodes={graphData.nodes}
@@ -456,7 +451,7 @@ export default function App() {
           selectedNode={selectedNode}
           pokemonDetailsById={pokemonDetailsById}
           tutorialStep={tutorialStep}
-          tutorialSelectedStarter={showTutorial ? selectedPokemon : null}
+          tutorialSelectedStarter={showTutorial ? tutorialSelectedStarter : null}
         />
       ) : (
         <div className="loading-overlay">No data available</div>

@@ -619,7 +619,21 @@ export const SimilarityGraph = ({
       .data(layoutNodes)
       .enter()
       .append("g")
-      .attr("class", "node");
+      .attr("class", "node")
+      .style("opacity", (d) =>
+        tutorialStep === 2 &&
+        tutorialSelectedStarter &&
+        d.pokemon_id !== tutorialSelectedStarter
+          ? 0.28
+          : 1,
+      )
+      .style("cursor", (d) =>
+        tutorialStep === 2 &&
+        tutorialSelectedStarter &&
+        d.pokemon_id !== tutorialSelectedStarter
+          ? "not-allowed"
+          : "pointer",
+      );
 
     node
       .append("circle")
@@ -641,6 +655,32 @@ export const SimilarityGraph = ({
       .attr("href", (d) => d.sprite_url || "")
       .attr("opacity", 0.96)
       .style("pointer-events", "none");
+
+    if (tutorialStep === 2 && tutorialSelectedStarter) {
+      node
+        .filter((d) => d.pokemon_id === tutorialSelectedStarter)
+        .raise()
+        .append("circle")
+        .attr("class", "tutorial-node-highlight-halo")
+        .attr("r", (d) => d.radius + 5)
+        .attr("fill", "none")
+        .attr("stroke", "#ffd700")
+        .attr("stroke-width", 7)
+        .attr("vector-effect", "non-scaling-stroke")
+        .style("pointer-events", "none");
+
+      node
+        .filter((d) => d.pokemon_id === tutorialSelectedStarter)
+        .raise()
+        .append("circle")
+        .attr("class", "tutorial-node-highlight")
+        .attr("r", (d) => d.radius + 5)
+        .attr("fill", "none")
+        .attr("stroke", "#ffd700")
+        .attr("stroke-width", 3)
+        .attr("vector-effect", "non-scaling-stroke")
+        .style("pointer-events", "none");
+    }
 
     node.on("mouseenter", (event, d) => {
       const bounds = wrapperRef.current?.getBoundingClientRect();
@@ -693,6 +733,13 @@ export const SimilarityGraph = ({
 
     node.on("click", (event, d) => {
       event.stopPropagation();
+      if (
+        tutorialStep === 2 &&
+        tutorialSelectedStarter &&
+        d.pokemon_id !== tutorialSelectedStarter
+      ) {
+        return;
+      }
       if (onPokemonClick) {
         onPokemonClick(d.pokemon_id);
       }
@@ -700,6 +747,13 @@ export const SimilarityGraph = ({
 
     node.on("dblclick", (event, d) => {
       event.stopPropagation();
+      if (
+        tutorialStep === 2 &&
+        tutorialSelectedStarter &&
+        d.pokemon_id !== tutorialSelectedStarter
+      ) {
+        return;
+      }
       onPokemonSelect(d.pokemon_id);
     });
 
@@ -886,19 +940,23 @@ export const SimilarityGraph = ({
           .translate(-centerX, -centerY),
       );
     } else if (tutorialStep === 2 && tutorialSelectedStarter) {
-      // Auto-zoom to tutorial starter pokemon
       const tutorialNode = layoutNodes.find(
         (node) => node.pokemon_id === tutorialSelectedStarter,
       );
       if (tutorialNode) {
         const zoomScale = 2.5;
-        svg.call(
-          zoom.transform,
-          d3.zoomIdentity
-            .translate(width / 2, height / 2)
-            .scale(zoomScale)
-            .translate(-tutorialNode.x, -tutorialNode.y),
-        );
+        const tutorialTransform = d3.zoomIdentity
+          .translate(width / 2, height / 2)
+          .scale(zoomScale)
+          .translate(-tutorialNode.x, -tutorialNode.y);
+
+        svg.call(zoom.transform, d3.zoomIdentity);
+        svg
+          .transition()
+          .delay(250)
+          .duration(950)
+          .ease(d3.easeCubicInOut)
+          .call(zoom.transform, tutorialTransform);
       }
     }
 
@@ -958,17 +1016,20 @@ export const SimilarityGraph = ({
           <div className="graph-tooltip-meta">#{tooltip.id}</div>
           {selectedPokemon && typeof tooltip.similarity === "number" ? (
             <div className="graph-tooltip-meta">
-              Similarity {(tooltip.similarity * 100).toFixed(1)}%
+              Similarity: {(tooltip.similarity * 100).toFixed(1)}%
             </div>
           ) : null}
           {selectedPokemon && typeof tooltip.relativeSimilarity === "number" ? (
             <div className="graph-tooltip-meta">
-              Relative {(tooltip.relativeSimilarity * 100).toFixed(1)}%
+              Relative Similarity:{" "}
+              {(tooltip.relativeSimilarity * 100).toFixed(1)}%
             </div>
           ) : null}
-          {!selectedPokemon && typeof tooltip.representativeness === "number" ? (
+          {!selectedPokemon &&
+          typeof tooltip.representativeness === "number" ? (
             <div className="graph-tooltip-meta">
-              Cry Representativeness {(tooltip.representativeness * 100).toFixed(1)}%
+              Cry Representativeness{" "}
+              {(tooltip.representativeness * 100).toFixed(1)}%
             </div>
           ) : null}
           {tooltip.types && tooltip.types.length > 0 ? (

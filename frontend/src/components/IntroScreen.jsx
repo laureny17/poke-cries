@@ -1,12 +1,6 @@
-import React, { useEffect } from "react";
+import React from "react";
 
-export const IntroScreen = ({ onDismiss }) => {
-  useEffect(() => {
-    // Auto-dismiss after 5 seconds
-    const timer = setTimeout(onDismiss, 5000);
-    return () => clearTimeout(timer);
-  }, [onDismiss]);
-
+export const IntroScreen = ({ onStartExploring, onStartTutorial }) => {
   return (
     <div className="intro-overlay">
       <div className="intro-modal">
@@ -15,12 +9,20 @@ export const IntroScreen = ({ onDismiss }) => {
           Explore how Pokémon cries cluster together by audio similarity.
         </p>
         <p className="intro-description">
-          See the overview of all Pokémon, then zoom into individual neighborhoods
-          to understand their cry relationships.
+          See the overview of all Pokémon, then zoom into individual
+          neighborhoods to understand their cry relationships.
         </p>
-        <button className="intro-button" onClick={onDismiss}>
-          Start Exploring →
-        </button>
+        <div className="intro-actions">
+          <button className="intro-button" onClick={onStartExploring}>
+            Start Exploring
+          </button>
+          <button
+            className="intro-button intro-button-secondary"
+            onClick={onStartTutorial}
+          >
+            Tutorial
+          </button>
+        </div>
       </div>
     </div>
   );

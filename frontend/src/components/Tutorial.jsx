@@ -11,8 +11,9 @@ export const Tutorial = ({
   selectedPokemon,
   tutorialStep: externalStep,
   onStepChange,
+  onStarterChange,
   onComplete,
-  onSkip
+  onSkip,
 }) => {
   const [step, setStep] = useState(1);
   const [selectedStarter, setSelectedStarter] = useState(null);
@@ -27,9 +28,19 @@ export const Tutorial = ({
     }
   }, [step, onStepChange]);
 
+  useEffect(() => {
+    if (onStarterChange) {
+      onStarterChange(selectedStarter);
+    }
+  }, [selectedStarter, onStarterChange]);
+
   const handlePokeballClick = (pokemonId) => {
     // If clicking a different pokéball, close the previous one first
-    if (selectedStarter && selectedStarter !== pokemonId && openedPokeballs.has(selectedStarter)) {
+    if (
+      selectedStarter &&
+      selectedStarter !== pokemonId &&
+      openedPokeballs.has(selectedStarter)
+    ) {
       setClosingPokeball(selectedStarter);
       setTimeout(() => {
         setOpenedPokeballs((prev) => {
@@ -65,6 +76,9 @@ export const Tutorial = ({
   };
 
   const handleContinueFromStep1 = () => {
+    if (onStarterChange) {
+      onStarterChange(selectedStarter);
+    }
     setStep(2);
   };
 
@@ -119,23 +133,25 @@ export const Tutorial = ({
                       closingPokeball === starter.id
                         ? `url(/assets/pokeball-closed.svg)`
                         : openingPokeballs.has(starter.id)
-                        ? `url(/assets/pokeball-opening.svg)`
-                        : openedPokeballs.has(starter.id)
-                        ? `url(/assets/pokeball-open.svg)`
-                        : `url(/assets/pokeball-closed.svg)`,
+                          ? `url(/assets/pokeball-opening.svg)`
+                          : openedPokeballs.has(starter.id)
+                            ? `url(/assets/pokeball-open.svg)`
+                            : `url(/assets/pokeball-closed.svg)`,
                   }}
                 >
-                  {openedPokeballs.has(starter.id) && closingPokeball !== starter.id && (
-                    <img
-                      src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${starter.id}.png`}
-                      alt={starter.name}
-                      className="starter-sprite"
-                    />
-                  )}
+                  {openedPokeballs.has(starter.id) &&
+                    closingPokeball !== starter.id && (
+                      <img
+                        src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${starter.id}.png`}
+                        alt={starter.name}
+                        className="starter-sprite"
+                      />
+                    )}
                 </button>
-                {openedPokeballs.has(starter.id) && closingPokeball !== starter.id && (
-                  <div className="starter-name">{starter.name}</div>
-                )}
+                {openedPokeballs.has(starter.id) &&
+                  closingPokeball !== starter.id && (
+                    <div className="starter-name">{starter.name}</div>
+                  )}
               </div>
             ))}
           </div>
@@ -158,20 +174,22 @@ export const Tutorial = ({
 
   // Step 2: Spotlight Effect
   if (step === 2 && selectedStarter) {
-    const starterName = GEN_I_STARTERS.find((s) => s.id === selectedStarter)?.name || "Your Pokémon";
+    const starterName =
+      GEN_I_STARTERS.find((s) => s.id === selectedStarter)?.name ||
+      "Your Pokémon";
 
     return (
       <div className="tutorial-step2">
-        <div className="tutorial-dim-overlay" />
-        <div className="tutorial-highlight-box">
-          <div className="tutorial-cursor">👆</div>
-        </div>
         <div className="tutorial-dialog tutorial-dialog-step2">
           <h2 className="tutorial-title">Found {starterName}!</h2>
           <p className="tutorial-text">
-            Double-click on {starterName} in the graph to see its audio neighborhood.
+            Double-click on {starterName} in the graph to see its audio
+            neighborhood.
           </p>
-          <p className="tutorial-text" style={{ fontSize: "14px", color: "#666" }}>
+          <p
+            className="tutorial-text"
+            style={{ fontSize: "14px", color: "#666" }}
+          >
             This will show you which other Pokémon have similar cries.
           </p>
           <button className="tutorial-skip-btn" onClick={handleSkip}>
@@ -187,22 +205,21 @@ export const Tutorial = ({
     return (
       <div className="tutorial-overlay">
         <div className="tutorial-modal">
-          <h2 className="tutorial-title">Audio Neighborhood Unlocked!</h2>
+          <h2 className="tutorial-title">Focused Similarity View</h2>
           <div className="tutorial-explanation">
             <p className="tutorial-text">
               <strong>What you're seeing:</strong>
             </p>
             <ul className="tutorial-list">
               <li>The selected Pokémon is in the center</li>
-              <li>
-                Other Pokémon are arranged by how similar their cries are
-              </li>
+              <li>Other Pokémon are arranged by their cry similarity score</li>
               <li>Closer Pokémon have more similar cries</li>
               <li>Hover over any Pokémon to see the similarity percentage</li>
             </ul>
             <p className="tutorial-text">
-              <strong>Pro Tip:</strong> You can zoom and pan the graph. Use the
-              search bar to jump to specific Pokémon!
+              Return to overview mode to see broader audio neighborhoods. Use
+              the search bar to center this similarity graph on another
+              Pokémon, or double-click any Pokémon to recenter the view there.
             </p>
           </div>
           <div className="tutorial-buttons">
