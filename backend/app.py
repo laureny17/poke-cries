@@ -22,7 +22,7 @@ app = Flask(__name__)
 # allow local dev frontends explicitly.
 cors_origins = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173",
+    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:5173,http://127.0.0.1:5173",
 ).split(",")
 CORS(
     app,
@@ -32,6 +32,17 @@ CORS(
 # global state for cached similarity data (keeps the app less comutationally intensive)
 similarity_data = None
 DATA_FILE = Path(__file__).parent / "data" / "similarity_data.json"
+GENERATION_ROMAN = {
+    1: "i",
+    2: "ii",
+    3: "iii",
+    4: "iv",
+    5: "v",
+    6: "vi",
+    7: "vii",
+    8: "viii",
+    9: "ix",
+}
 
 
 # spread tightly-clustered cosine scores into a range that is more visually useful for our visualization
@@ -55,6 +66,11 @@ def _calibrate_similarity_scores(scores: list[float]) -> dict[float, float]:
         scaled[score] = float(calibrated)
 
     return scaled
+
+
+def _matches_generation(gen_name: str, generation: int) -> bool:
+    expected_roman = GENERATION_ROMAN.get(generation)
+    return gen_name in {f"generation-{generation}", f"generation-{expected_roman}"}
 
 # load similarity data into memory
 def load_data():
@@ -151,7 +167,7 @@ def get_pokemon_list():
         # skip entries outside the requested generation, if any
         if generation:
             gen_name = info.get("generation", "")
-            if f"generation-{generation}" not in gen_name:
+            if not _matches_generation(gen_name, generation):
                 continue
 
         pokemon_list.append({
@@ -292,9 +308,18 @@ def get_similarity_matrix():
     for pid, info in similarity_data["pokemon_info"].items():
         if generation:
             gen_name = info.get("generation", "")
-            if f"generation-{generation}" not in gen_name:
+            if not _matches_generation(gen_name, generation):
                 continue
         filtered_pokemon[pid] = info
+
+    if generation:
+        overview_layout = compute_overview_layout(
+            list(filtered_pokemon.keys()),
+            similarity_data.get("similarities", {}),
+            similarity_data.get("vectors", {}),
+        )
+    else:
+        overview_layout = similarity_data.get("overview_layout", {})
 
     # build nodes for the frontend graph view
     nodes = []
@@ -304,12 +329,12 @@ def get_similarity_matrix():
         nodes.append({
             "id": idx,
             "pokemon_id": pid,
-            "overview_x": similarity_data.get("overview_layout", {}).get(pid, {}).get("x"),
-            "overview_y": similarity_data.get("overview_layout", {}).get(pid, {}).get("y"),
-            "representativeness": similarity_data.get("overview_layout", {}).get(pid, {}).get("representativeness"),
-            "cluster_id": similarity_data.get("overview_layout", {}).get(pid, {}).get("cluster_id"),
-            "cluster_size": similarity_data.get("overview_layout", {}).get(pid, {}).get("cluster_size"),
-            "cluster_representative_id": similarity_data.get("overview_layout", {}).get(pid, {}).get("cluster_representative_id"),
+            "overview_x": overview_layout.get(pid, {}).get("x"),
+            "overview_y": overview_layout.get(pid, {}).get("y"),
+            "representativeness": overview_layout.get(pid, {}).get("representativeness"),
+            "cluster_id": overview_layout.get(pid, {}).get("cluster_id"),
+            "cluster_size": overview_layout.get(pid, {}).get("cluster_size"),
+            "cluster_representative_id": overview_layout.get(pid, {}).get("cluster_representative_id"),
             **info,
         })
 

@@ -555,7 +555,7 @@ export const SimilarityGraph = ({
         .attr("font-weight", 600)
         .attr("letter-spacing", "0.03em")
         .attr("text-anchor", "end")
-        .text("Rough")
+        .text("Buzz")
         .style("pointer-events", "none");
 
       axisLayer
@@ -566,7 +566,7 @@ export const SimilarityGraph = ({
         .attr("font-size", 13)
         .attr("font-weight", 600)
         .attr("letter-spacing", "0.03em")
-        .text("Melodic")
+        .text("Chirp")
         .style("pointer-events", "none");
 
       axisLayer
@@ -578,7 +578,7 @@ export const SimilarityGraph = ({
         .attr("font-weight", 600)
         .attr("letter-spacing", "0.03em")
         .attr("text-anchor", "middle")
-        .text("Complex")
+        .text("Punchy")
         .style("pointer-events", "none");
 
       axisLayer
@@ -590,7 +590,7 @@ export const SimilarityGraph = ({
         .attr("font-weight", 600)
         .attr("letter-spacing", "0.03em")
         .attr("text-anchor", "middle")
-        .text("Simple")
+        .text("Sustained")
         .style("pointer-events", "none");
     }
 

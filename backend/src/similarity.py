@@ -5,18 +5,26 @@ Compute similarity scores between Pokémon cries using cosine similarity.
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 
-from .audio_processor import project_melodic_complexity_axes
+from .audio_processor import AXIS_FEATURES, _feature_slices, project_melodic_complexity_axes
 
-OVERVIEW_LAYOUT_VERSION = 7
+OVERVIEW_LAYOUT_VERSION = 10
 
 try:
     from sklearn.manifold import SpectralEmbedding
-    from sklearn.cluster import SpectralClustering
+    from sklearn.cluster import AgglomerativeClustering, SpectralClustering
     from sklearn.decomposition import PCA
 except ImportError:
+    AgglomerativeClustering = None
     SpectralEmbedding = None
     SpectralClustering = None
     PCA = None
+
+
+MUST_LINK_GROUPS = [
+    # User-identified squeaky/chirpy family; these are very close by ear and
+    # should not be split just because one descriptor drifts.
+    (10, 12, 27, 33, 36, 116),
+]
 
 
 def _pca_embedding(matrix: np.ndarray, n_components: int = 2) -> np.ndarray:
@@ -68,6 +76,147 @@ def _zscore_columns(values: np.ndarray) -> np.ndarray:
     std = np.std(values, axis=0, keepdims=True)
     std = np.where(std < 1e-8, 1.0, std)
     return (values - mean) / std
+
+
+def _rank_columns(values: np.ndarray) -> np.ndarray:
+    """Map each descriptor column to roughly [-1, 1] by percentile rank."""
+    ranked = np.zeros_like(values, dtype=float)
+    for col_index in range(values.shape[1]):
+        column = values[:, col_index]
+        finite_mask = np.isfinite(column)
+        if int(np.sum(finite_mask)) <= 1:
+            continue
+
+        valid_values = column[finite_mask]
+        order = np.argsort(valid_values, kind="mergesort")
+        ranks = np.empty(valid_values.size, dtype=float)
+        ranks[order] = np.arange(valid_values.size, dtype=float)
+        percentiles = ranks / max(valid_values.size - 1, 1)
+        ranked[finite_mask, col_index] = percentiles * 2.0 - 1.0
+
+    return ranked
+
+
+def _axis_scores_from_descriptors(axis_values: np.ndarray) -> np.ndarray:
+    """Compute visible graph axes from ranked acoustic descriptors."""
+    ranked = _rank_columns(axis_values)
+    feature_index = {name: index for index, name in enumerate(AXIS_FEATURES)}
+
+    def col(name: str) -> np.ndarray:
+        return ranked[:, feature_index[name]]
+
+    buzz_to_chirp = (
+        0.32 * col("pitch_height")
+        + 0.24 * col("pitch_stability")
+        + 0.20 * col("tonality")
+        + 0.18 * col("brightness")
+        + 0.10 * col("attack")
+        - 0.34 * col("noisiness")
+        - 0.12 * col("sustain")
+    )
+    sustained_to_punchy = (
+        0.44 * col("attack")
+        + 0.16 * col("pitch_height")
+        + 0.10 * col("brightness")
+        - 0.44 * col("sustain")
+        - 0.18 * col("duration")
+    )
+    # Layout y increases downward in SVG, so positive values should mean
+    # sustained/bottom and negative values should mean punchy/top.
+    axis_scores = np.column_stack([buzz_to_chirp, -sustained_to_punchy])
+
+    for col_index in range(axis_scores.shape[1]):
+        extent = float(np.percentile(np.abs(axis_scores[:, col_index]), 98))
+        if extent > 1e-8:
+            axis_scores[:, col_index] = axis_scores[:, col_index] / extent
+
+    return np.clip(axis_scores, -1.35, 1.35)
+
+
+def _descriptor_cluster_labels(
+    sorted_ids: List[int],
+    vectors: Optional[Dict[int, np.ndarray]],
+    fallback_matrix: np.ndarray,
+) -> Optional[np.ndarray]:
+    """Cluster by ranked acoustic descriptor profiles when available."""
+    if not vectors or AgglomerativeClustering is None:
+        return None
+
+    slices = _feature_slices()
+    axis_values = []
+    valid_indices = []
+    for index, pid in enumerate(sorted_ids):
+        vector = vectors.get(pid)
+        if vector is None:
+            continue
+        values = np.asarray(vector, dtype=float).ravel()
+        if values.size < slices["shape"].stop:
+            continue
+        axis_values.append(values[slices["axis"]])
+        valid_indices.append(index)
+
+    if len(valid_indices) != len(sorted_ids) or len(axis_values) < 8:
+        return None
+
+    ranked = _rank_columns(np.asarray(axis_values, dtype=float))
+    weights = np.array(
+        [1.15, 1.0, 1.0, 1.2, 0.75, 0.65, 0.85, 0.7, 0.9, 0.35],
+        dtype=float,
+    )
+    descriptor_features = ranked * weights
+
+    # Include a low-weight local-neighborhood signature so clusters keep some
+    # cry-shape context while still being primarily organized by audible vibe.
+    neighbor_signature = _embed_from_precomputed_similarity(fallback_matrix)
+    neighbor_signature = _zscore_columns(neighbor_signature) * 0.28
+    features = np.hstack([descriptor_features, neighbor_signature])
+
+    cluster_count = int(np.clip(round(len(sorted_ids) / 12), 8, 90))
+    cluster_count = min(cluster_count, len(sorted_ids))
+    try:
+        return AgglomerativeClustering(
+            n_clusters=cluster_count,
+            linkage="ward",
+        ).fit_predict(features)
+    except Exception:
+        return _kmeans_labels(features, cluster_count)
+
+
+def _apply_must_link_groups(
+    clusters: List[np.ndarray],
+    sorted_ids: List[int],
+    raw_similarity: np.ndarray,
+) -> List[np.ndarray]:
+    """Pull known ear-matched examples into explicit cohesive clusters."""
+    index_by_id = {pid: index for index, pid in enumerate(sorted_ids)}
+    protected_indices = set()
+    seed_clusters = []
+
+    for group in MUST_LINK_GROUPS:
+        indices = [index_by_id[pid] for pid in group if pid in index_by_id]
+        if len(indices) < 2:
+            continue
+
+        pair_scores = []
+        for i, source in enumerate(indices):
+            for target in indices[i + 1:]:
+                pair_scores.append(float(raw_similarity[source, target]))
+
+        if pair_scores and min(pair_scores) >= 0.92:
+            protected_indices.update(indices)
+            seed_clusters.append(np.array(sorted(indices), dtype=int))
+
+    if not seed_clusters:
+        return clusters
+
+    next_clusters = []
+    for cluster in clusters:
+        remaining = [index for index in cluster if index not in protected_indices]
+        if remaining:
+            next_clusters.append(np.array(remaining, dtype=int))
+
+    next_clusters.extend(seed_clusters)
+    return next_clusters
 
 
 def _orthogonal_align(source: np.ndarray, target: np.ndarray) -> np.ndarray:
@@ -123,6 +272,57 @@ def _kmeans_labels(matrix: np.ndarray, cluster_count: int, iterations: int = 24)
     return labels
 
 
+def _merge_tiny_clusters(
+    clusters: List[np.ndarray],
+    raw_similarity: np.ndarray,
+    min_size: int,
+) -> List[np.ndarray]:
+    """Merge tiny visual islands into their nearest larger neighborhood."""
+    if min_size <= 1 or len(clusters) <= 1:
+        return clusters
+
+    merged = [np.array(cluster, dtype=int) for cluster in clusters if len(cluster) > 0]
+
+    changed = True
+    while changed and len(merged) > 1:
+        changed = False
+        merged.sort(key=lambda indices: (len(indices), int(np.min(indices))))
+
+        for source_index, source in enumerate(merged):
+            if len(source) >= min_size:
+                continue
+
+            best_target_index = None
+            best_score = -1.0
+            for target_index, target in enumerate(merged):
+                if target_index == source_index:
+                    continue
+
+                cross_similarity = raw_similarity[np.ix_(source, target)]
+                if cross_similarity.size == 0:
+                    continue
+
+                # Use the strongest reliable bridge, not just the mean, so
+                # small but real families do not become permanent loners.
+                score = float(np.percentile(cross_similarity, 90))
+                if score > best_score:
+                    best_score = score
+                    best_target_index = target_index
+
+            if best_target_index is None:
+                continue
+
+            merged[best_target_index] = np.array(
+                sorted(np.concatenate([merged[best_target_index], source])),
+                dtype=int,
+            )
+            del merged[source_index]
+            changed = True
+            break
+
+    return merged
+
+
 def compute_cosine_similarity(vector1: np.ndarray, vector2: np.ndarray) -> float:
     """
     Compute cosine similarity between two vectors.
@@ -141,6 +341,29 @@ def compute_cosine_similarity(vector1: np.ndarray, vector2: np.ndarray) -> float
     """
     v1 = np.asarray(vector1, dtype=float).ravel()
     v2 = np.asarray(vector2, dtype=float).ravel()
+    slices = _feature_slices()
+
+    if v1.size >= slices["shape"].stop and v2.size >= slices["shape"].stop:
+        def _block_similarity(name: str) -> float:
+            block1 = v1[slices[name]]
+            block2 = v2[slices[name]]
+            denominator = np.linalg.norm(block1) * np.linalg.norm(block2)
+            if denominator <= 1e-12:
+                return 0.0
+            return float(np.dot(block1, block2) / denominator)
+
+        # Shape carries the pitch-tolerant gesture of the cry; MFCC/texture and
+        # envelope keep broad timbre and attack from collapsing into one blob.
+        weighted_scores = [
+            (0.44, _block_similarity("shape")),
+            (0.19, _block_similarity("mfcc")),
+            (0.16, _block_similarity("texture")),
+            (0.10, _block_similarity("pitch_contour")),
+            (0.08, _block_similarity("envelope")),
+            (0.03, _block_similarity("pitch")),
+        ]
+        return float(sum(weight * score for weight, score in weighted_scores))
+
     denominator = np.linalg.norm(v1) * np.linalg.norm(v2)
     if denominator <= 1e-12:
         return 0.0
@@ -313,12 +536,25 @@ def compute_overview_layout(
     axis_descriptor_targets = np.zeros((n, 2), dtype=float)
     has_axis_descriptors = False
     if vectors:
+        axis_values = []
+        axis_indices = []
+        slices = _feature_slices()
         for index, pid in enumerate(sorted_ids):
             vector = vectors.get(pid)
             if vector is None:
                 continue
-            melodic, complex_score = project_melodic_complexity_axes(vector)
-            axis_descriptor_targets[index] = [melodic, complex_score]
+            values = np.asarray(vector, dtype=float).ravel()
+            if values.size >= slices["shape"].stop:
+                axis_values.append(values[slices["axis"]])
+                axis_indices.append(index)
+            else:
+                melodic, complex_score = project_melodic_complexity_axes(vector)
+                axis_descriptor_targets[index] = [melodic, complex_score]
+
+        if axis_values:
+            axis_score_values = _axis_scores_from_descriptors(np.asarray(axis_values))
+            for target_index, score in zip(axis_indices, axis_score_values):
+                axis_descriptor_targets[target_index] = score
 
         descriptor_spread = np.std(axis_descriptor_targets, axis=0)
         has_axis_descriptors = bool(np.all(descriptor_spread > 1e-8))
@@ -326,32 +562,36 @@ def compute_overview_layout(
     axis_positions = np.zeros((n, 2), dtype=float)
     use_axis_layout = bool(vectors) and has_axis_descriptors
     if use_axis_layout:
-        # Similarity-first layout: preserve cry neighborhoods in 2D.
-        axis_positions = _embed_from_precomputed_similarity(raw_similarity)
-        axis_positions = axis_positions - np.mean(axis_positions, axis=0, keepdims=True)
-        axis_positions = _zscore_columns(axis_positions)
+        # Axis-first layout: coordinates must visibly mean something. A small
+        # local-similarity offset separates near-identical points without
+        # destroying the left/right and top/bottom audio progression.
+        descriptor_positions = axis_descriptor_targets.copy()
+        local_similarity_positions = _embed_from_precomputed_similarity(raw_similarity)
+        local_similarity_positions = local_similarity_positions - np.mean(
+            local_similarity_positions,
+            axis=0,
+            keepdims=True,
+        )
+        local_similarity_positions = _zscore_columns(local_similarity_positions)
+        axis_positions = descriptor_positions * 0.82 + local_similarity_positions * 0.18
 
-        # Align orientation to semantic descriptors without destroying local similarity.
-        aligned_targets = _zscore_columns(axis_descriptor_targets)
-        valid_mask = np.isfinite(aligned_targets).all(axis=1)
-        if int(np.sum(valid_mask)) >= 3:
-            rotation = _orthogonal_align(axis_positions[valid_mask], aligned_targets[valid_mask])
-            axis_positions = axis_positions @ rotation
-
-        robust_extent = float(np.percentile(np.abs(axis_positions), 97))
+        robust_extent = float(np.percentile(np.abs(axis_positions), 96))
         scale = max(robust_extent, 1e-6)
         axis_positions = np.clip(axis_positions / scale, -1.35, 1.35)
 
     if n == 1:
         return {sorted_ids[0]: {"x": 0.0, "y": 0.0}}
 
-    if n < 8:
+    descriptor_labels = _descriptor_cluster_labels(sorted_ids, vectors, raw_similarity)
+    if descriptor_labels is not None:
+        cluster_labels = descriptor_labels
+    elif n < 8:
         cluster_labels = np.zeros(n, dtype=int)
     else:
         # Start with broad macro communities, then split oversized communities
         # using local similarity. This preserves good perceptual neighborhoods
         # that higher-k spectral clustering was cutting apart too early.
-        cluster_count = int(np.clip(round(np.sqrt(n) * 0.25), 4, 10))
+        cluster_count = int(np.clip(round(np.sqrt(n) * 0.48), 6, 18))
         cluster_count = min(cluster_count, n)
         if SpectralClustering is not None:
             try:
@@ -377,7 +617,7 @@ def compute_overview_layout(
     # Spectral clustering can still produce one visually dominant island. Split
     # oversized islands locally so the overview remains a readable set of
     # neighborhoods without changing the underlying pairwise similarities.
-    target_cluster_size = max(48, int(np.ceil(np.sqrt(n) * 2.2)))
+    target_cluster_size = max(18, int(np.ceil(np.sqrt(n) * 1.05)))
     balanced_clusters = []
     for indices in clusters:
         if len(indices) <= target_cluster_size:
@@ -438,6 +678,17 @@ def compute_overview_layout(
 
     clusters = sorted(
         balanced_clusters,
+        key=lambda cluster_indices: (-len(cluster_indices), int(np.min(cluster_indices))),
+    )
+    clusters = _apply_must_link_groups(clusters, sorted_ids, raw_similarity)
+    clusters = sorted(
+        clusters,
+        key=lambda cluster_indices: (-len(cluster_indices), int(np.min(cluster_indices))),
+    )
+    min_visual_cluster_size = 3 if n < 260 else 4
+    clusters = _merge_tiny_clusters(clusters, raw_similarity, min_visual_cluster_size)
+    clusters = sorted(
+        clusters,
         key=lambda cluster_indices: (-len(cluster_indices), int(np.min(cluster_indices))),
     )
 
@@ -601,7 +852,9 @@ def compute_overview_layout(
                     center_push[j] += step
 
             # Keep clusters near their intended axis anchors while separating collisions.
-                    center_push += (anchor_centers - cluster_centers) * (0.02 if use_axis_layout else 0.0)
+            center_push += (anchor_centers - cluster_centers) * (
+                0.02 if use_axis_layout else 0.0
+            )
             cluster_centers += center_push
 
             if max_overlap < 1e-4:
@@ -695,7 +948,26 @@ def compute_overview_layout(
             shift = cluster_centers[cluster_index] - original_centers[cluster_index]
             local_positions[indices] += shift
 
-    embedding = local_positions
+    if use_axis_layout:
+        cluster_embedding = local_positions - np.mean(
+            local_positions,
+            axis=0,
+            keepdims=True,
+        )
+        cluster_extent = float(np.percentile(np.abs(cluster_embedding), 98))
+        if cluster_extent > 1e-8:
+            cluster_embedding = cluster_embedding / cluster_extent
+
+        axis_embedding = axis_positions - np.mean(axis_positions, axis=0, keepdims=True)
+        axis_extent = float(np.percentile(np.abs(axis_embedding), 98))
+        if axis_extent > 1e-8:
+            axis_embedding = axis_embedding / axis_extent
+
+        # The axes are the promise of the overview. Keep cluster packing as a
+        # readability offset, not as the thing that decides scale placement.
+        embedding = axis_embedding * 0.82 + cluster_embedding * 0.18
+    else:
+        embedding = local_positions
 
     if len(clusters) <= 1:
         if SpectralEmbedding is not None:
