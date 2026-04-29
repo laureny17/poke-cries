@@ -1248,7 +1248,11 @@ export const SimilarityGraph = ({
         const densityBoost = Math.min(0.9, clusterNodes.length / 48);
         const localGap = -0.45 - densityBoost * 0.15;
 
-        for (let pass = 0; pass < 9 + Math.ceil(clusterNodes.length / 12); pass += 1) {
+        for (
+          let pass = 0;
+          pass < 9 + Math.ceil(clusterNodes.length / 12);
+          pass += 1
+        ) {
           let moved = false;
 
           for (let i = 0; i < clusterNodes.length; i += 1) {
