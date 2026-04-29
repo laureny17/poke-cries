@@ -16,7 +16,7 @@ import "./App.css";
 // Max Pokémon shown in the overview graph at once.
 // Keeps the force simulation fast and the graph readable.
 const MAX_NODES = 400;
-const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v4";
+const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v8";
 
 export default function App() {
   const [selectedPokemon, setSelectedPokemon] = useState(null);
@@ -170,7 +170,11 @@ export default function App() {
 
   const playPokemonCry = async (pokemonId) => {
     const details = await ensurePokemonDetails(pokemonId);
-    const cryUrl = details?.cry_url || details?.cry_url_legacy;
+    const cryUrl =
+      // for pikachu, use the legacy cry which is better for comparison
+      pokemonId === 25
+        ? details?.cry_url_legacy || details?.cry_url
+        : details?.cry_url || details?.cry_url_legacy;
     if (!cryUrl) return;
     try {
       const audio = new Audio(cryUrl);
@@ -451,7 +455,9 @@ export default function App() {
           selectedNode={selectedNode}
           pokemonDetailsById={pokemonDetailsById}
           tutorialStep={tutorialStep}
-          tutorialSelectedStarter={showTutorial ? tutorialSelectedStarter : null}
+          tutorialSelectedStarter={
+            showTutorial ? tutorialSelectedStarter : null
+          }
         />
       ) : (
         <div className="loading-overlay">No data available</div>

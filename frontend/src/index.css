@@ -72,14 +72,18 @@ code {
 }
 
 .graph-root {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  left: -4vw;
+  top: -4vh;
+  width: 108vw;
+  height: 108vh;
+  overflow: visible;
 }
 
 .graph-root svg {
   width: 100%;
   height: 100%;
+  overflow: visible;
 }
 
 .node {
@@ -143,9 +147,11 @@ code {
 }
 
 .graph-hint {
-  position: absolute;
-  left: 14px;
-  bottom: 14px;
+  position: fixed;
+  left: max(14px, env(safe-area-inset-left));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 40;
+  max-width: min(92vw, 620px);
   padding: 8px 14px;
   border-radius: 4px;
   border: 2px solid #d0d4e0;
@@ -153,6 +159,8 @@ code {
   color: #666880;
   font-size: 18px;
   letter-spacing: 0.2px;
+  pointer-events: none;
+  overflow-wrap: anywhere;
 }
 
 /* ── Search bar ──────────────────────────────────────────────────────────── */

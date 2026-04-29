@@ -15,7 +15,7 @@ from src.data_pipeline import (
 )
 from src.pokeapi_client import get_pokemon_data, get_pokemon_species
 from src.similarity import get_similar_pokemon, normalize_similarity, compute_distance
-from src.similarity import compute_overview_layout
+from src.similarity import compute_overview_layout, OVERVIEW_LAYOUT_VERSION
 
 app = Flask(__name__)
 
@@ -77,6 +77,11 @@ def load_data():
             for position in overview_layout.values()
             if isinstance(position, dict)
         )
+        stale_layout_version = bool(overview_layout) and any(
+            position.get("layout_version") != OVERVIEW_LAYOUT_VERSION
+            for position in overview_layout.values()
+            if isinstance(position, dict)
+        )
         representativeness_values = [
             position.get("representativeness")
             for position in overview_layout.values()
@@ -86,6 +91,9 @@ def load_data():
         stale_representativeness = bool(representativeness_values) and max(
             representativeness_values,
         ) < 0.05
+        low_representativeness_floor = bool(representativeness_values) and min(
+            representativeness_values,
+        ) < 0.19
         cluster_sizes = [
             position.get("cluster_size")
             for position in overview_layout.values()
@@ -99,13 +107,16 @@ def load_data():
             not overview_layout
             or missing_representativeness
             or missing_cluster_metadata
+            or stale_layout_version
             or stale_representativeness
+            or low_representativeness_floor
             or oversized_cached_cluster
         ):
             # Generate or upgrade layout once here so the matrix endpoint can reuse it later.
             overview_layout = compute_overview_layout(
                 list(similarity_data.get("pokemon_info", {}).keys()),
                 similarity_data.get("similarities", {}),
+                similarity_data.get("vectors", {}),
             )
             similarity_data["overview_layout"] = overview_layout
             save_similarity_data(similarity_data, DATA_FILE)
@@ -182,6 +193,7 @@ def get_pokemon(pokemon_id: int):
 
     habitat = species_data.get("habitat", {}).get("name") if species_data.get("habitat") else None
     cries = pokemon_data.get("cries", {})
+    preferred_cry_url = cries.get("legacy") or cries.get("latest")
 
     details = {
         "id": pokemon_id,
@@ -193,12 +205,12 @@ def get_pokemon(pokemon_id: int):
         "types": [t.get("type", {}).get("name") for t in pokemon_data.get("types", []) if t.get("type")],
         "habitat": habitat,
         "description": description,
-        "cry_url": cries.get("latest"),
+        "cry_url": preferred_cry_url,
         "cry_url_legacy": cries.get("legacy"),
     }
 
     if info:
-        details = {**details, **info, **{"habitat": habitat, "description": description, "cry_url": cries.get("latest"), "cry_url_legacy": cries.get("legacy")}}
+        details = {**details, **info, **{"habitat": habitat, "description": description, "cry_url": preferred_cry_url, "cry_url_legacy": cries.get("legacy")}}
 
     return jsonify(details)
 

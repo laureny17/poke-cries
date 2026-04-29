@@ -12,6 +12,9 @@ build/
 /backend/data/vectors/
 /backend/data/cache/
 /backend/data/*.json
+/backend/data/
+/backend/data-copy/
+
 
 # Frontend
 /frontend/node_modules/

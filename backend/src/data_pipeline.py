@@ -28,6 +28,7 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 CRIES_DIR = DATA_DIR / "cries"
 VECTORS_DIR = DATA_DIR / "vectors"
 CACHE_DIR = DATA_DIR / "cache"
+CRY_SOURCE_VERSION = "legacy-preferred-v1"
 
 
 def ensure_dirs():
@@ -39,12 +40,12 @@ def ensure_dirs():
 
 def get_cry_local_path(pokemon_id: int) -> Path:
     """Get local path for a cry file."""
-    return CRIES_DIR / f"{pokemon_id}.ogg"
+    return CRIES_DIR / f"{pokemon_id}_{CRY_SOURCE_VERSION}.ogg"
 
 
 def get_vector_local_path(pokemon_id: int) -> Path:
     """Get local path for a cached feature vector."""
-    return VECTORS_DIR / f"{pokemon_id}.npy"
+    return VECTORS_DIR / f"{pokemon_id}_v{FEATURE_VERSION}_{CRY_SOURCE_VERSION}.npy"
 
 
 def download_and_process_cry(pokemon_id: int) -> Optional[np.ndarray]:
@@ -71,7 +72,10 @@ def download_and_process_cry(pokemon_id: int) -> Optional[np.ndarray]:
 
     # Download cry if not cached
     if not cry_local_path.exists():
-        cry_url = get_cry_url(pokemon_id, use_latest=True)
+        cry_url = get_cry_url(pokemon_id, use_latest=False) or get_cry_url(
+            pokemon_id,
+            use_latest=True,
+        )
         if not cry_url:
             print(f"No cry URL found for Pokémon {pokemon_id}")
             return None
@@ -171,6 +175,7 @@ def build_similarity_matrix(pokemon_ids: List[int]) -> Dict:
     overview_layout = compute_overview_layout(
         list(mfcc_vectors.keys()),
         normalized_similarities,
+        mfcc_vectors,
     )
 
     return {
@@ -261,6 +266,8 @@ def load_similarity_data(input_file: Path) -> Optional[Dict]:
             for key in ("cluster_id", "cluster_size", "cluster_representative_id"):
                 if key in position:
                     layout_position[key] = int(position[key])
+            if "layout_version" in position:
+                layout_position["layout_version"] = int(position["layout_version"])
             overview_layout[int(pid)] = layout_position
 
         return {

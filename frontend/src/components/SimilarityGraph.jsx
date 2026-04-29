@@ -340,6 +340,27 @@ export const SimilarityGraph = ({
     const centerX = width / 2;
     const centerY = height / 2;
     const overviewPadding = 24;
+    const overviewLabelGutter = selectedPokemon
+      ? { top: 0, right: 0, bottom: 0, left: 0 }
+      : { top: 44, right: 64, bottom: 98, left: 64 };
+    const overviewLeft = overviewPadding + overviewLabelGutter.left;
+    const overviewRight = width - overviewPadding - overviewLabelGutter.right;
+    const overviewTop = overviewPadding + overviewLabelGutter.top;
+    const overviewBottom =
+      height - overviewPadding - overviewLabelGutter.bottom;
+    const overviewCenterX = (overviewLeft + overviewRight) / 2;
+    const overviewCenterY = (overviewTop + overviewBottom) / 2;
+    // Keep sprite centers away from hard boundaries so edge clusters do not flatten.
+    const overviewNodeInset = selectedPokemon ? 0 : 54;
+    const overviewNodeLeft = overviewLeft + overviewNodeInset;
+    const overviewNodeRight = overviewRight - overviewNodeInset;
+    const overviewNodeTop = overviewTop + overviewNodeInset;
+    const overviewNodeBottom = overviewBottom - overviewNodeInset;
+    const overviewNodeWidth = Math.max(overviewNodeRight - overviewNodeLeft, 1);
+    const overviewNodeHeight = Math.max(
+      overviewNodeBottom - overviewNodeTop,
+      1,
+    );
 
     const overviewCoords = focusedNodes
       .map((node) => ({
@@ -401,15 +422,15 @@ export const SimilarityGraph = ({
       const baseDistance = getTargetDistance(node) + spiralOffset;
       const overviewX =
         typeof node.overview_x === "number"
-          ? overviewPadding +
+          ? overviewNodeLeft +
             ((node.overview_x - (overviewBounds?.minX ?? -1)) / overviewSpanX) *
-              Math.max(width - overviewPadding * 2, 1)
+              overviewNodeWidth
           : centerX;
       const overviewY =
         typeof node.overview_y === "number"
-          ? overviewPadding +
+          ? overviewNodeTop +
             ((node.overview_y - (overviewBounds?.minY ?? -1)) / overviewSpanY) *
-              Math.max(height - overviewPadding * 2, 1)
+              overviewNodeHeight
           : centerY;
 
       return {
@@ -499,6 +520,80 @@ export const SimilarityGraph = ({
 
     const g = svg.append("g");
 
+    if (!selectedPokemon) {
+      const axisLayer = g.append("g").attr("class", "overview-axes");
+      axisLayer
+        .append("line")
+        .attr("x1", overviewLeft)
+        .attr("y1", overviewCenterY)
+        .attr("x2", overviewRight)
+        .attr("y2", overviewCenterY)
+        .attr("stroke", "#aab0c4")
+        .attr("stroke-width", 1.4)
+        .attr("stroke-dasharray", "6 6")
+        .attr("stroke-opacity", 0.7)
+        .style("pointer-events", "none");
+
+      axisLayer
+        .append("line")
+        .attr("x1", overviewCenterX)
+        .attr("y1", overviewTop)
+        .attr("x2", overviewCenterX)
+        .attr("y2", overviewBottom)
+        .attr("stroke", "#aab0c4")
+        .attr("stroke-width", 1.4)
+        .attr("stroke-dasharray", "6 6")
+        .attr("stroke-opacity", 0.7)
+        .style("pointer-events", "none");
+
+      axisLayer
+        .append("text")
+        .attr("x", overviewLeft - 34)
+        .attr("y", overviewCenterY - 8)
+        .attr("fill", "#8a90a3")
+        .attr("font-size", 13)
+        .attr("font-weight", 600)
+        .attr("letter-spacing", "0.03em")
+        .attr("text-anchor", "end")
+        .text("Rough")
+        .style("pointer-events", "none");
+
+      axisLayer
+        .append("text")
+        .attr("x", overviewRight + 34)
+        .attr("y", overviewCenterY - 8)
+        .attr("fill", "#8a90a3")
+        .attr("font-size", 13)
+        .attr("font-weight", 600)
+        .attr("letter-spacing", "0.03em")
+        .text("Melodic")
+        .style("pointer-events", "none");
+
+      axisLayer
+        .append("text")
+        .attr("x", overviewCenterX)
+        .attr("y", overviewTop - 24)
+        .attr("fill", "#8a90a3")
+        .attr("font-size", 13)
+        .attr("font-weight", 600)
+        .attr("letter-spacing", "0.03em")
+        .attr("text-anchor", "middle")
+        .text("Complex")
+        .style("pointer-events", "none");
+
+      axisLayer
+        .append("text")
+        .attr("x", overviewCenterX)
+        .attr("y", overviewBottom + 40)
+        .attr("fill", "#8a90a3")
+        .attr("font-size", 13)
+        .attr("font-weight", 600)
+        .attr("letter-spacing", "0.03em")
+        .attr("text-anchor", "middle")
+        .text("Simple")
+        .style("pointer-events", "none");
+    }
+
     const defs = svg.append("defs");
     layoutNodes.forEach((node) => {
       const { gradient } = getNodeTypeFill(node);
@@ -569,8 +664,8 @@ export const SimilarityGraph = ({
           "collision",
           d3
             .forceCollide()
-            .radius((node) => getNodeRadius(node) + 2)
-            .strength(0.9),
+            .radius((node) => getNodeRadius(node) * 0.9 + 0.55)
+            .strength(0.5),
         )
         .alphaDecay(0.12)
         .velocityDecay(0.78);
@@ -676,33 +771,37 @@ export const SimilarityGraph = ({
         clustersById.get(layoutNode.cluster_id).push(layoutNode);
       });
 
-      overviewClusters = Array.from(clustersById, ([clusterId, clusterNodes]) => {
-        const representative =
-          clusterNodes.find(
-            (clusterNode) =>
-              clusterNode.pokemon_id === clusterNodes[0].cluster_representative_id,
-          ) ||
-          clusterNodes
-            .slice()
-            .sort(
-              (a, b) =>
-                (b.representativeness || 0) - (a.representativeness || 0),
-            )[0];
-        const scores = clusterNodes
-          .map((clusterNode) => clusterNode.representativeness)
-          .filter((score) => typeof score === "number");
+      overviewClusters = Array.from(
+        clustersById,
+        ([clusterId, clusterNodes]) => {
+          const representative =
+            clusterNodes.find(
+              (clusterNode) =>
+                clusterNode.pokemon_id ===
+                clusterNodes[0].cluster_representative_id,
+            ) ||
+            clusterNodes
+              .slice()
+              .sort(
+                (a, b) =>
+                  (b.representativeness || 0) - (a.representativeness || 0),
+              )[0];
+          const scores = clusterNodes
+            .map((clusterNode) => clusterNode.representativeness)
+            .filter((score) => typeof score === "number");
 
-        return {
-          id: clusterId,
-          nodes: clusterNodes,
-          size: clusterNodes.length,
-          representative,
-          averageRepresentativeness:
-            scores.length > 0
-              ? scores.reduce((sum, score) => sum + score, 0) / scores.length
-              : null,
-        };
-      });
+          return {
+            id: clusterId,
+            nodes: clusterNodes,
+            size: clusterNodes.length,
+            representative,
+            averageRepresentativeness:
+              scores.length > 0
+                ? scores.reduce((sum, score) => sum + score, 0) / scores.length
+                : null,
+          };
+        },
+      );
 
       const clusterGroup = clusterOutlineLayer
         .selectAll("g")
@@ -906,7 +1005,7 @@ export const SimilarityGraph = ({
     });
 
     // Pre-settle silently before rendering.
-    simulation.tick(selectedPokemon ? 35 : 120);
+    simulation.tick(selectedPokemon ? 35 : 180);
     simulation.stop();
 
     if (selectedPokemon) {
@@ -984,7 +1083,7 @@ export const SimilarityGraph = ({
         node.ty = node.y;
       }
     } else {
-      for (let pass = 0; pass < 18; pass += 1) {
+      for (let pass = 0; pass < 6; pass += 1) {
         let moved = false;
 
         for (let i = 0; i < layoutNodes.length; i += 1) {
@@ -994,7 +1093,9 @@ export const SimilarityGraph = ({
             let dx = b.x - a.x;
             let dy = b.y - a.y;
             let distance = Math.hypot(dx, dy);
-            const minSeparation = a.radius + b.radius + 3;
+            const visibleRadiusA = a.radius + 3;
+            const visibleRadiusB = b.radius + 3;
+            const minSeparation = visibleRadiusA + visibleRadiusB + 1.25;
 
             if (distance >= minSeparation) {
               continue;
@@ -1019,19 +1120,214 @@ export const SimilarityGraph = ({
         }
 
         layoutNodes.forEach((node) => {
-          node.x = node.anchorX + (node.x - node.anchorX) * 0.9;
-          node.y = node.anchorY + (node.y - node.anchorY) * 0.9;
-          node.x = Math.max(
-            overviewPadding + node.radius,
-            Math.min(width - overviewPadding - node.radius, node.x),
-          );
-          node.y = Math.max(
-            overviewPadding + node.radius,
-            Math.min(height - overviewPadding - node.radius, node.y),
-          );
+          node.x = node.anchorX + (node.x - node.anchorX) * 0.92;
+          node.y = node.anchorY + (node.y - node.anchorY) * 0.92;
           node.tx = node.x;
           node.ty = node.y;
         });
+
+        if (!moved) {
+          break;
+        }
+      }
+
+      const nodesByClusterId = new Map();
+      layoutNodes.forEach((layoutNode) => {
+        if (layoutNode.cluster_id == null) {
+          return;
+        }
+        if (!nodesByClusterId.has(layoutNode.cluster_id)) {
+          nodesByClusterId.set(layoutNode.cluster_id, []);
+        }
+        nodesByClusterId.get(layoutNode.cluster_id).push(layoutNode);
+      });
+
+      const clusterGroups = Array.from(nodesByClusterId.values()).filter(
+        (clusterNodes) => clusterNodes.length > 0,
+      );
+
+      const measureCluster = (clusterNodes) => {
+        const centerX =
+          clusterNodes.reduce((sum, node) => sum + node.x, 0) /
+          clusterNodes.length;
+        const centerY =
+          clusterNodes.reduce((sum, node) => sum + node.y, 0) /
+          clusterNodes.length;
+        let radius = 0;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+
+        clusterNodes.forEach((node) => {
+          const dx = node.x - centerX;
+          const dy = node.y - centerY;
+          radius = Math.max(radius, Math.hypot(dx, dy) + node.radius);
+          minX = Math.min(minX, node.x - node.radius);
+          maxX = Math.max(maxX, node.x + node.radius);
+          minY = Math.min(minY, node.y - node.radius);
+          maxY = Math.max(maxY, node.y + node.radius);
+        });
+
+        return {
+          centerX,
+          centerY,
+          radius: radius + 12,
+          minX,
+          maxX,
+          minY,
+          maxY,
+        };
+      };
+
+      if (clusterGroups.length > 1) {
+        for (let pass = 0; pass < 220; pass += 1) {
+          const metrics = clusterGroups.map((clusterNodes) =>
+            measureCluster(clusterNodes),
+          );
+          let moved = false;
+
+          for (let i = 0; i < clusterGroups.length; i += 1) {
+            for (let j = i + 1; j < clusterGroups.length; j += 1) {
+              const a = metrics[i];
+              const b = metrics[j];
+              let dx = b.centerX - a.centerX;
+              let dy = b.centerY - a.centerY;
+              let distance = Math.hypot(dx, dy);
+              const minSeparation = a.radius + b.radius + 26;
+
+              if (distance >= minSeparation) {
+                continue;
+              }
+
+              if (distance < 1e-6) {
+                dx = (i + 1) * 0.37;
+                dy = (j + 1) * 0.61;
+                distance = Math.hypot(dx, dy);
+              }
+
+              const overlap = (minSeparation - distance) / 2;
+              const nx = dx / distance;
+              const ny = dy / distance;
+
+              clusterGroups[i].forEach((node) => {
+                node.x -= nx * overlap;
+                node.y -= ny * overlap;
+              });
+              clusterGroups[j].forEach((node) => {
+                node.x += nx * overlap;
+                node.y += ny * overlap;
+              });
+              moved = true;
+            }
+          }
+
+          clusterGroups.forEach((clusterNodes) => {
+            // Intentionally do not clamp clusters to the viewport; let edge
+            // clusters keep their natural shape instead of flattening inward.
+          });
+
+          if (!moved) {
+            break;
+          }
+        }
+
+        clusterGroups.forEach((clusterNodes) => {
+          clusterNodes.forEach((node) => {
+            node.tx = node.x;
+            node.ty = node.y;
+          });
+        });
+      }
+
+      clusterGroups.forEach((clusterNodes) => {
+        if (clusterNodes.length < 6) {
+          return;
+        }
+
+        const densityBoost = Math.min(0.9, clusterNodes.length / 48);
+        const localGap = -0.45 - densityBoost * 0.15;
+
+        for (let pass = 0; pass < 9 + Math.ceil(clusterNodes.length / 12); pass += 1) {
+          let moved = false;
+
+          for (let i = 0; i < clusterNodes.length; i += 1) {
+            const a = clusterNodes[i];
+            for (let j = i + 1; j < clusterNodes.length; j += 1) {
+              const b = clusterNodes[j];
+              let dx = b.x - a.x;
+              let dy = b.y - a.y;
+              let distance = Math.hypot(dx, dy);
+              const visibleRadiusA = a.radius + 3;
+              const visibleRadiusB = b.radius + 3;
+              const minSeparation = visibleRadiusA + visibleRadiusB + localGap;
+
+              if (distance >= minSeparation) {
+                continue;
+              }
+
+              moved = true;
+              if (distance < 1e-6) {
+                dx = j % 2 === 0 ? 1 : -1;
+                dy = i % 2 === 0 ? 1 : -1;
+                distance = Math.hypot(dx, dy);
+              }
+
+              const push = (minSeparation - distance) / 2;
+              const nx = dx / distance;
+              const ny = dy / distance;
+
+              a.x -= nx * push;
+              a.y -= ny * push;
+              b.x += nx * push;
+              b.y += ny * push;
+            }
+          }
+
+          if (!moved) {
+            break;
+          }
+        }
+      });
+
+      // One final local repack so clusters that were moved apart stay readable.
+      // This is intentionally looser than the initial pass, but it catches the
+      // rare dense-pair overlaps that show up in big clusters.
+      for (let pass = 0; pass < 3; pass += 1) {
+        let moved = false;
+
+        for (let i = 0; i < layoutNodes.length; i += 1) {
+          const a = layoutNodes[i];
+          for (let j = i + 1; j < layoutNodes.length; j += 1) {
+            const b = layoutNodes[j];
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let distance = Math.hypot(dx, dy);
+            const visibleRadiusA = a.radius + 3;
+            const visibleRadiusB = b.radius + 3;
+            const minSeparation = visibleRadiusA + visibleRadiusB - 0.35;
+
+            if (distance >= minSeparation) {
+              continue;
+            }
+
+            moved = true;
+            if (distance < 1e-6) {
+              dx = j % 2 === 0 ? 1 : -1;
+              dy = i % 2 === 0 ? 1 : -1;
+              distance = Math.hypot(dx, dy);
+            }
+
+            const push = (minSeparation - distance) / 2;
+            const nx = dx / distance;
+            const ny = dy / distance;
+
+            a.x -= nx * push;
+            a.y -= ny * push;
+            b.x += nx * push;
+            b.y += ny * push;
+          }
+        }
 
         if (!moved) {
           break;
@@ -1217,15 +1513,19 @@ export const SimilarityGraph = ({
       {clusterTooltip ? (
         <div
           className="graph-tooltip graph-cluster-tooltip"
-          style={{ left: `${clusterTooltip.x}px`, top: `${clusterTooltip.y}px` }}
+          style={{
+            left: `${clusterTooltip.x}px`,
+            top: `${clusterTooltip.y}px`,
+          }}
         >
           <div className="graph-tooltip-name">Cluster</div>
           <div className="graph-tooltip-meta">
             Pokemon: {clusterTooltip.size}
           </div>
-          {clusterTooltip.representativeName ? (
+          {clusterTooltip.size > 2 && clusterTooltip.representativeName ? (
             <div className="graph-tooltip-meta">
-              Most Representative: {titleCase(clusterTooltip.representativeName)}
+              Most Representative:{" "}
+              {titleCase(clusterTooltip.representativeName)}
               {clusterTooltip.representativeId
                 ? ` #${clusterTooltip.representativeId}`
                 : ""}
@@ -1240,8 +1540,9 @@ export const SimilarityGraph = ({
         </div>
       ) : null}
       <div className="graph-hint">
-        Double-click a Pokémon to center its audio neighborhood. Click to hear
-        its cry.
+        {selectedPokemon
+          ? "Double-click a Pokémon to center its audio neighborhood. Click to hear its cry."
+          : "Overview map: clusters are positioned by cry character. Double-click a Pokémon to focus it."}
       </div>
     </div>
   );
