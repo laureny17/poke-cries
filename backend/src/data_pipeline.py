@@ -210,6 +210,7 @@ def save_similarity_data(data: Dict, output_file: Path):
 
     output_data = {
         "feature_version": data.get("feature_version", FEATURE_VERSION),
+        "embedding_model": data.get("embedding_model"),
         "vectors": vectors_list,
         "similarities": similarities,
         "pokemon_info": data["pokemon_info"],
@@ -272,6 +273,7 @@ def load_similarity_data(input_file: Path) -> Optional[Dict]:
 
         return {
             "feature_version": int(data.get("feature_version", FEATURE_VERSION)),
+            "embedding_model": data.get("embedding_model"),
             "vectors": vectors,
             "similarities": similarities,
             "pokemon_info": pokemon_info,

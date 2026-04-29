@@ -19,6 +19,16 @@ except ImportError:
     SpectralClustering = None
     PCA = None
 
+try:
+    import umap
+except ImportError:
+    umap = None
+
+try:
+    import hdbscan
+except ImportError:
+    hdbscan = None
+
 
 MUST_LINK_GROUPS = [
     # User-identified squeaky/chirpy family; these are very close by ear and
@@ -133,6 +143,94 @@ def _axis_scores_from_descriptors(axis_values: np.ndarray) -> np.ndarray:
     return np.clip(axis_scores, -1.35, 1.35)
 
 
+def _vector_matrix(
+    sorted_ids: List[int],
+    vectors: Optional[Dict[int, np.ndarray]],
+) -> Optional[np.ndarray]:
+    if not vectors:
+        return None
+
+    rows = []
+    expected_size = None
+    for pid in sorted_ids:
+        vector = vectors.get(pid)
+        if vector is None:
+            return None
+        values = np.asarray(vector, dtype=float).ravel()
+        if expected_size is None:
+            expected_size = values.size
+        elif values.size != expected_size:
+            return None
+        rows.append(values)
+
+    if not rows:
+        return None
+    return np.asarray(rows, dtype=float)
+
+
+def _is_neural_embedding_matrix(matrix: Optional[np.ndarray]) -> bool:
+    if matrix is None:
+        return False
+    return matrix.shape[1] < _feature_slices()["shape"].stop
+
+
+def _embed_vector_matrix(matrix: np.ndarray) -> np.ndarray:
+    if matrix.shape[0] <= 1:
+        return np.zeros((matrix.shape[0], 2), dtype=float)
+
+    normalized = matrix / np.maximum(np.linalg.norm(matrix, axis=1, keepdims=True), 1e-12)
+    if umap is not None and matrix.shape[0] >= 8:
+        try:
+            return umap.UMAP(
+                n_components=2,
+                n_neighbors=min(18, matrix.shape[0] - 1),
+                min_dist=0.04,
+                metric="cosine",
+                random_state=42,
+            ).fit_transform(normalized)
+        except Exception:
+            pass
+
+    return _pca_embedding(normalized)
+
+
+def _hdbscan_labels(matrix: np.ndarray) -> Optional[np.ndarray]:
+    if hdbscan is None or matrix.shape[0] < 8:
+        return None
+
+    embedding = _embed_vector_matrix(matrix)
+    min_cluster_size = max(6, int(round(matrix.shape[0] / 170)))
+    try:
+        labels = hdbscan.HDBSCAN(
+            min_cluster_size=min_cluster_size,
+            min_samples=2,
+            cluster_selection_method="eom",
+        ).fit_predict(embedding)
+    except Exception:
+        return None
+
+    if np.all(labels < 0):
+        return None
+
+    next_label = int(np.max(labels)) + 1
+    for index, label in enumerate(labels):
+        if label >= 0:
+            continue
+
+        clustered_indices = np.where(labels >= 0)[0]
+        if clustered_indices.size == 0:
+            labels[index] = next_label
+            next_label += 1
+            continue
+
+        distances = np.sum((embedding[clustered_indices] - embedding[index]) ** 2, axis=1)
+        nearest_index = int(clustered_indices[int(np.argmin(distances))])
+        labels[index] = int(labels[nearest_index])
+
+    _, compact = np.unique(labels, return_inverse=True)
+    return compact
+
+
 def _descriptor_cluster_labels(
     sorted_ids: List[int],
     vectors: Optional[Dict[int, np.ndarray]],
@@ -202,7 +300,7 @@ def _apply_must_link_groups(
             for target in indices[i + 1:]:
                 pair_scores.append(float(raw_similarity[source, target]))
 
-        if pair_scores and min(pair_scores) >= 0.92:
+        if pair_scores and min(pair_scores) >= 0.86 and float(np.mean(pair_scores)) >= 0.91:
             protected_indices.update(indices)
             seed_clusters.append(np.array(sorted(indices), dtype=int))
 
@@ -496,6 +594,8 @@ def compute_overview_layout(
     sorted_ids = sorted(pokemon_ids)
     index_by_id = {pid: index for index, pid in enumerate(sorted_ids)}
     n = len(sorted_ids)
+    vector_matrix = _vector_matrix(sorted_ids, vectors)
+    is_neural_embedding = _is_neural_embedding_matrix(vector_matrix)
 
     affinity = np.zeros((n, n), dtype=float)
     raw_similarity = np.zeros((n, n), dtype=float)
@@ -535,7 +635,7 @@ def compute_overview_layout(
 
     axis_descriptor_targets = np.zeros((n, 2), dtype=float)
     has_axis_descriptors = False
-    if vectors:
+    if vectors and not is_neural_embedding:
         axis_values = []
         axis_indices = []
         slices = _feature_slices()
@@ -561,7 +661,14 @@ def compute_overview_layout(
 
     axis_positions = np.zeros((n, 2), dtype=float)
     use_axis_layout = bool(vectors) and has_axis_descriptors
-    if use_axis_layout:
+    if is_neural_embedding and vector_matrix is not None:
+        axis_positions = _embed_vector_matrix(vector_matrix)
+        axis_positions = axis_positions - np.mean(axis_positions, axis=0, keepdims=True)
+        axis_positions = _zscore_columns(axis_positions)
+        robust_extent = float(np.percentile(np.abs(axis_positions), 96))
+        axis_positions = np.clip(axis_positions / max(robust_extent, 1e-6), -1.35, 1.35)
+        use_axis_layout = True
+    elif use_axis_layout:
         # Axis-first layout: coordinates must visibly mean something. A small
         # local-similarity offset separates near-identical points without
         # destroying the left/right and top/bottom audio progression.
@@ -582,7 +689,11 @@ def compute_overview_layout(
     if n == 1:
         return {sorted_ids[0]: {"x": 0.0, "y": 0.0}}
 
-    descriptor_labels = _descriptor_cluster_labels(sorted_ids, vectors, raw_similarity)
+    descriptor_labels = (
+        _hdbscan_labels(vector_matrix)
+        if is_neural_embedding and vector_matrix is not None
+        else _descriptor_cluster_labels(sorted_ids, vectors, raw_similarity)
+    )
     if descriptor_labels is not None:
         cluster_labels = descriptor_labels
     elif n < 8:
@@ -620,7 +731,7 @@ def compute_overview_layout(
     target_cluster_size = max(18, int(np.ceil(np.sqrt(n) * 1.05)))
     balanced_clusters = []
     for indices in clusters:
-        if len(indices) <= target_cluster_size:
+        if is_neural_embedding or len(indices) <= target_cluster_size:
             balanced_clusters.append(indices)
             continue
 

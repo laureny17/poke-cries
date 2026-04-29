@@ -342,14 +342,12 @@ export const SimilarityGraph = ({
     const overviewPadding = 24;
     const overviewLabelGutter = selectedPokemon
       ? { top: 0, right: 0, bottom: 0, left: 0 }
-      : { top: 44, right: 64, bottom: 98, left: 64 };
+      : { top: 24, right: 32, bottom: 48, left: 32 };
     const overviewLeft = overviewPadding + overviewLabelGutter.left;
     const overviewRight = width - overviewPadding - overviewLabelGutter.right;
     const overviewTop = overviewPadding + overviewLabelGutter.top;
     const overviewBottom =
       height - overviewPadding - overviewLabelGutter.bottom;
-    const overviewCenterX = (overviewLeft + overviewRight) / 2;
-    const overviewCenterY = (overviewTop + overviewBottom) / 2;
     // Keep sprite centers away from hard boundaries so edge clusters do not flatten.
     const overviewNodeInset = selectedPokemon ? 0 : 54;
     const overviewNodeLeft = overviewLeft + overviewNodeInset;
@@ -519,80 +517,6 @@ export const SimilarityGraph = ({
       .attr("height", height);
 
     const g = svg.append("g");
-
-    if (!selectedPokemon) {
-      const axisLayer = g.append("g").attr("class", "overview-axes");
-      axisLayer
-        .append("line")
-        .attr("x1", overviewLeft)
-        .attr("y1", overviewCenterY)
-        .attr("x2", overviewRight)
-        .attr("y2", overviewCenterY)
-        .attr("stroke", "#aab0c4")
-        .attr("stroke-width", 1.4)
-        .attr("stroke-dasharray", "6 6")
-        .attr("stroke-opacity", 0.7)
-        .style("pointer-events", "none");
-
-      axisLayer
-        .append("line")
-        .attr("x1", overviewCenterX)
-        .attr("y1", overviewTop)
-        .attr("x2", overviewCenterX)
-        .attr("y2", overviewBottom)
-        .attr("stroke", "#aab0c4")
-        .attr("stroke-width", 1.4)
-        .attr("stroke-dasharray", "6 6")
-        .attr("stroke-opacity", 0.7)
-        .style("pointer-events", "none");
-
-      axisLayer
-        .append("text")
-        .attr("x", overviewLeft - 34)
-        .attr("y", overviewCenterY - 8)
-        .attr("fill", "#8a90a3")
-        .attr("font-size", 13)
-        .attr("font-weight", 600)
-        .attr("letter-spacing", "0.03em")
-        .attr("text-anchor", "end")
-        .text("Buzz")
-        .style("pointer-events", "none");
-
-      axisLayer
-        .append("text")
-        .attr("x", overviewRight + 34)
-        .attr("y", overviewCenterY - 8)
-        .attr("fill", "#8a90a3")
-        .attr("font-size", 13)
-        .attr("font-weight", 600)
-        .attr("letter-spacing", "0.03em")
-        .text("Chirp")
-        .style("pointer-events", "none");
-
-      axisLayer
-        .append("text")
-        .attr("x", overviewCenterX)
-        .attr("y", overviewTop - 24)
-        .attr("fill", "#8a90a3")
-        .attr("font-size", 13)
-        .attr("font-weight", 600)
-        .attr("letter-spacing", "0.03em")
-        .attr("text-anchor", "middle")
-        .text("Punchy")
-        .style("pointer-events", "none");
-
-      axisLayer
-        .append("text")
-        .attr("x", overviewCenterX)
-        .attr("y", overviewBottom + 40)
-        .attr("fill", "#8a90a3")
-        .attr("font-size", 13)
-        .attr("font-weight", 600)
-        .attr("letter-spacing", "0.03em")
-        .attr("text-anchor", "middle")
-        .text("Sustained")
-        .style("pointer-events", "none");
-    }
 
     const defs = svg.append("defs");
     layoutNodes.forEach((node) => {
