@@ -461,6 +461,7 @@ export const SimilarityGraph = ({
     });
 
     let layoutNodes = baseLayoutNodes;
+    let overviewClusterPairStrengths = new Map();
 
     if (selectedPokemon) {
       layoutNodes = baseLayoutNodes.map((node) => {
@@ -504,16 +505,65 @@ export const SimilarityGraph = ({
       const COMPACT_CLUSTER_ANGLE = Math.PI * (3 - Math.sqrt(5));
       layoutNodes = baseLayoutNodes.map((node) => ({ ...node }));
 
-      nodesByClusterId.forEach((clusterNodes) => {
-        if (clusterNodes.length <= 1) {
+      const layoutNodeByPokemonId = new Map(
+        layoutNodes.map((node) => [node.pokemon_id, node]),
+      );
+      const clusterLayouts = Array.from(
+        nodesByClusterId,
+        ([clusterId, nodes]) => {
+          const layoutClusterNodes = nodes
+            .map((node) => layoutNodeByPokemonId.get(node.pokemon_id))
+            .filter(Boolean);
+          const x =
+            layoutClusterNodes.reduce((sum, node) => sum + node.anchorX, 0) /
+            layoutClusterNodes.length;
+          const y =
+            layoutClusterNodes.reduce((sum, node) => sum + node.anchorY, 0) /
+            layoutClusterNodes.length;
+          const compactRadius =
+            Math.sqrt(Math.max(layoutClusterNodes.length - 1, 0)) * 10 + 20;
+
+          return {
+            id: clusterId,
+            nodes: layoutClusterNodes,
+            x,
+            y,
+            anchorX: x,
+            anchorY: y,
+            radius: compactRadius,
+          };
+        },
+      );
+      const clusterPairStrengths = new Map();
+      focusedLinks.forEach((link) => {
+        const sourceNode = layoutNodeByPokemonId.get(link.source);
+        const targetNode = layoutNodeByPokemonId.get(link.target);
+        if (
+          !sourceNode ||
+          !targetNode ||
+          sourceNode.cluster_id == null ||
+          targetNode.cluster_id == null ||
+          sourceNode.cluster_id === targetNode.cluster_id
+        ) {
           return;
         }
 
-        const clusterPokemonIds = new Set(
-          clusterNodes.map((node) => node.pokemon_id),
+        const [a, b] = [sourceNode.cluster_id, targetNode.cluster_id].sort(
+          (left, right) => left - right,
         );
-        const compactNodes = layoutNodes
-          .filter((node) => clusterPokemonIds.has(node.pokemon_id))
+        const key = `${a}|${b}`;
+        clusterPairStrengths.set(
+          key,
+          Math.max(clusterPairStrengths.get(key) || 0, link.similarity || 0),
+        );
+      });
+
+      overviewClusterPairStrengths = clusterPairStrengths;
+
+      clusterLayouts.forEach((clusterLayout) => {
+        const clusterNodes = clusterLayout.nodes;
+        const compactNodes = clusterNodes
+          .slice()
           .sort((a, b) => {
             const representativeDelta =
               Number(b.pokemon_id === b.cluster_representative_id) -
@@ -524,12 +574,6 @@ export const SimilarityGraph = ({
             return a.pokemon_id - b.pokemon_id;
           });
 
-        const clusterCenterX =
-          compactNodes.reduce((sum, node) => sum + node.anchorX, 0) /
-          compactNodes.length;
-        const clusterCenterY =
-          compactNodes.reduce((sum, node) => sum + node.anchorY, 0) /
-          compactNodes.length;
         const packStep = Math.max(
           8,
           Math.min(11, 14 - compactNodes.length * 0.12),
@@ -538,8 +582,8 @@ export const SimilarityGraph = ({
         compactNodes.forEach((node, index) => {
           const radius = index === 0 ? 0 : Math.sqrt(index) * packStep;
           const angle = index * COMPACT_CLUSTER_ANGLE;
-          const x = clusterCenterX + Math.cos(angle) * radius;
-          const y = clusterCenterY + Math.sin(angle) * radius;
+          const x = clusterLayout.x + Math.cos(angle) * radius;
+          const y = clusterLayout.y + Math.sin(angle) * radius;
 
           node.anchorX = x;
           node.anchorY = y;
@@ -661,7 +705,7 @@ export const SimilarityGraph = ({
     const link = g
       .append("g")
       .selectAll("line")
-      .data(layoutLinks)
+      .data(selectedPokemon ? layoutLinks : [])
       .enter()
       .append("line")
       .attr("class", "link")
@@ -1165,6 +1209,19 @@ export const SimilarityGraph = ({
         };
       };
 
+      const getClusterPairStrength = (clusterA, clusterB) => {
+        const clusterIdA = clusterA[0]?.cluster_id;
+        const clusterIdB = clusterB[0]?.cluster_id;
+        if (clusterIdA == null || clusterIdB == null) {
+          return 0;
+        }
+
+        const [a, b] = [clusterIdA, clusterIdB].sort(
+          (left, right) => left - right,
+        );
+        return overviewClusterPairStrengths.get(`${a}|${b}`) || 0;
+      };
+
       if (clusterGroups.length > 1) {
         for (let pass = 0; pass < 220; pass += 1) {
           const metrics = clusterGroups.map((clusterNodes) =>
@@ -1179,7 +1236,13 @@ export const SimilarityGraph = ({
               let dx = b.centerX - a.centerX;
               let dy = b.centerY - a.centerY;
               let distance = Math.hypot(dx, dy);
-              const minSeparation = a.radius + b.radius + 26;
+              const pairStrength = getClusterPairStrength(
+                clusterGroups[i],
+                clusterGroups[j],
+              );
+              const desiredGap =
+                pairStrength >= 0.42 ? 3 + (1 - pairStrength) * 34 : 52;
+              const minSeparation = a.radius + b.radius + desiredGap;
 
               if (distance >= minSeparation) {
                 continue;
@@ -1354,9 +1417,38 @@ export const SimilarityGraph = ({
       node.attr("transform", (d) => `translate(${d.x},${d.y})`);
     });
 
+    const contentBounds = layoutNodes.reduce(
+      (bounds, node) => {
+        const padding = selectedPokemon ? 24 : 58;
+        return {
+          minX: Math.min(bounds.minX, node.x - node.radius - padding),
+          maxX: Math.max(bounds.maxX, node.x + node.radius + padding),
+          minY: Math.min(bounds.minY, node.y - node.radius - padding),
+          maxY: Math.max(bounds.maxY, node.y + node.radius + padding),
+        };
+      },
+      {
+        minX: Infinity,
+        maxX: -Infinity,
+        minY: Infinity,
+        maxY: -Infinity,
+      },
+    );
+    const contentWidth = Math.max(contentBounds.maxX - contentBounds.minX, 1);
+    const contentHeight = Math.max(contentBounds.maxY - contentBounds.minY, 1);
+    const overviewMinScale = Math.max(
+      0.15,
+      Math.min(
+        1,
+        width / (contentWidth * 1.08),
+        height / (contentHeight * 1.08),
+      ),
+    );
+    const minZoomScale = selectedPokemon ? 0.15 : overviewMinScale;
+
     const zoom = d3
       .zoom()
-      .scaleExtent([0.15, 6])
+      .scaleExtent([minZoomScale, 6])
       .on("zoom", (event) => {
         g.attr("transform", event.transform);
       });
