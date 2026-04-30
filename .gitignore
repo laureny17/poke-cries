@@ -12,7 +12,7 @@ build/
 /backend/data/vectors/
 /backend/data/cache/
 /backend/data/*.json
-/backend/data/
+# /backend/data/
 /backend/data-copy/
 
 
