@@ -12,11 +12,11 @@ app = Flask(__name__)
 # allow local dev frontends explicitly.
 cors_origins = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:5173,http://127.0.0.1:5173",
+    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:5173,http://127.0.0.1:5173,https://poke-cries.onrender.com",
 ).split(",")
 CORS(
     app,
-    resources={r"/api/*": {"origins": [origin.strip() for origin in cors_origins]}},
+    resources={r"/*": {"origins": [origin.strip() for origin in cors_origins]}},
 )
 
 # global state for cached similarity data (keeps the app less comutationally intensive)
@@ -69,11 +69,13 @@ def load_data():
 
 
 # health check
+@app.route("/health", methods=["GET"])
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
 
 
+@app.route("/pokemon", methods=["GET"])
 @app.route("/api/pokemon", methods=["GET"])
 def get_pokemon_list():
     """
@@ -111,6 +113,7 @@ def get_pokemon_list():
     return jsonify(pokemon_list)
 
 
+@app.route("/pokemon/<int:pokemon_id>", methods=["GET"])
 @app.route("/api/pokemon/<int:pokemon_id>", methods=["GET"])
 def get_pokemon(pokemon_id: int):
     """get details for a specific pokémon."""
@@ -161,6 +164,7 @@ def get_pokemon(pokemon_id: int):
     return jsonify(details)
 
 
+@app.route("/similarity/<int:pokemon_id>", methods=["GET"])
 @app.route("/api/similarity/<int:pokemon_id>", methods=["GET"])
 def get_similarity_neighbors(pokemon_id: int):
     """
@@ -218,6 +222,7 @@ def get_similarity_neighbors(pokemon_id: int):
     return jsonify(result)
 
 
+@app.route("/similarity-matrix", methods=["GET"])
 @app.route("/api/similarity-matrix", methods=["GET"])
 def get_similarity_matrix():
     """
@@ -296,6 +301,7 @@ def get_similarity_matrix():
 
 
 # get list of all generations along w/ counts of how many pokemon they have (for filtering UI)
+@app.route("/generations", methods=["GET"])
 @app.route("/api/generations", methods=["GET"])
 def get_generations():
     from src.data_pipeline import get_generation_pokemon
@@ -313,6 +319,7 @@ def get_generations():
     return jsonify(generations)
 
 
+@app.route("/admin/build-matrix", methods=["POST"])
 @app.route("/api/admin/build-matrix", methods=["POST"])
 def build_similarity_matrix_endpoint():
     """

@@ -1,6 +1,13 @@
 import axios from 'axios';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+const normalizeApiBase = (url) => {
+  const trimmedUrl = String(url || '').replace(/\/+$/, '');
+  return trimmedUrl.endsWith('/api') ? trimmedUrl : `${trimmedUrl}/api`;
+};
+
+const API_BASE = normalizeApiBase(
+  process.env.REACT_APP_API_URL || 'http://localhost:8000/api'
+);
 
 export const apiClient = {
   // Get all Pokémon with optional filters

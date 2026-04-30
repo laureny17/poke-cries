@@ -1185,6 +1185,7 @@ export const SimilarityGraph = ({
         onPokemonHover(d.pokemon_id);
       }
 
+      setClusterTooltip(null);
       const details = pokemonDetailsById[d.pokemon_id] || {};
       const sizeSource = { ...d, ...details };
       setTooltip({
@@ -1644,7 +1645,7 @@ export const SimilarityGraph = ({
           .attr("d", outlinePath);
         const measureNode = measurePath.node();
         const pathLength = measureNode?.getTotalLength?.() || 0;
-        const dotSpacing = 3;
+        const dotSpacing = 5.5;
         const dotCount = Math.max(8, Math.floor(pathLength / dotSpacing));
         const dots = Array.from({ length: dotCount }, (_, index) => {
           const distance = (index / dotCount) * pathLength;
@@ -1669,7 +1670,7 @@ export const SimilarityGraph = ({
           )
           .attr("cx", (dot) => dot.x)
           .attr("cy", (dot) => dot.y)
-          .attr("r", 1.0)
+          .attr("r", 0.7)
           .attr("fill", (dot) => dot.color);
       });
     };
