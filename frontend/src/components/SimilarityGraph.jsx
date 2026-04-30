@@ -1706,11 +1706,35 @@ export const SimilarityGraph = ({
       ),
     );
     const minZoomScale = selectedPokemon ? 0.15 : overviewMinScale;
-    const panPadding = selectedPokemon ? 180 : 96;
+    const panPaddingX = selectedPokemon ? 280 : 156;
+    const panPaddingY = selectedPokemon ? 180 : 96;
     const panExtent = [
-      [contentBounds.minX - panPadding, contentBounds.minY - panPadding],
-      [contentBounds.maxX + panPadding, contentBounds.maxY + panPadding],
+      [contentBounds.minX - panPaddingX, contentBounds.minY - panPaddingY],
+      [contentBounds.maxX + panPaddingX, contentBounds.maxY + panPaddingY],
     ];
+
+    const clampTransformToBounds = (transform) => {
+      const [[minX, minY], [maxX, maxY]] = panExtent;
+      const minTx = width - maxX * transform.k;
+      const maxTx = -minX * transform.k;
+      const minTy = height - maxY * transform.k;
+      const maxTy = -minY * transform.k;
+
+      const nextX =
+        minTx > maxTx
+          ? (minTx + maxTx) / 2
+          : Math.min(maxTx, Math.max(minTx, transform.x));
+      const nextY =
+        minTy > maxTy
+          ? (minTy + maxTy) / 2
+          : Math.min(maxTy, Math.max(minTy, transform.y));
+
+      if (nextX === transform.x && nextY === transform.y) {
+        return transform;
+      }
+
+      return d3.zoomIdentity.translate(nextX, nextY).scale(transform.k);
+    };
 
     const zoom = d3
       .zoom()
@@ -1718,8 +1742,8 @@ export const SimilarityGraph = ({
         [0, 0],
         [width, height],
       ])
-      .translateExtent(panExtent)
       .scaleExtent([minZoomScale, 6])
+      .constrain((transform) => clampTransformToBounds(transform))
       .on("zoom", (event) => {
         g.attr("transform", event.transform);
       });
