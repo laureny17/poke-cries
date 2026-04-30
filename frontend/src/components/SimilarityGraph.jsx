@@ -1628,7 +1628,7 @@ export const SimilarityGraph = ({
           .attr("d", outlinePath);
         const measureNode = measurePath.node();
         const pathLength = measureNode?.getTotalLength?.() || 0;
-        const dotSpacing = 10;
+        const dotSpacing = 3;
         const dotCount = Math.max(8, Math.floor(pathLength / dotSpacing));
         const dots = Array.from({ length: dotCount }, (_, index) => {
           const distance = (index / dotCount) * pathLength;
@@ -1653,7 +1653,7 @@ export const SimilarityGraph = ({
           )
           .attr("cx", (dot) => dot.x)
           .attr("cy", (dot) => dot.y)
-          .attr("r", 1.45)
+          .attr("r", 1.0)
           .attr("fill", (dot) => dot.color);
       });
     };
@@ -1706,19 +1706,26 @@ export const SimilarityGraph = ({
       ),
     );
     const minZoomScale = selectedPokemon ? 0.15 : overviewMinScale;
-    const panPaddingX = selectedPokemon ? 280 : 156;
-    const panPaddingY = selectedPokemon ? 180 : 96;
-    const panExtent = [
-      [contentBounds.minX - panPaddingX, contentBounds.minY - panPaddingY],
-      [contentBounds.maxX + panPaddingX, contentBounds.maxY + panPaddingY],
-    ];
 
     const clampTransformToBounds = (transform) => {
-      const [[minX, minY], [maxX, maxY]] = panExtent;
-      const minTx = width - maxX * transform.k;
-      const maxTx = -minX * transform.k;
-      const minTy = height - maxY * transform.k;
-      const maxTy = -minY * transform.k;
+      const k = transform.k;
+      // Padding shrinks as zoom increases so you can't pan into whitespace when
+      // zoomed in, but you get generous freedom when zoomed out.
+      // pad ∝ 1/k^1.5  →  screen-space freedom = pad*k ∝ 1/√k  (halves every 4× zoom).
+      const basePadX = selectedPokemon ? 280 : 220;
+      const basePadY = selectedPokemon ? 180 : 140;
+      const padX = basePadX / Math.pow(k, 1.5);
+      const padY = basePadY / Math.pow(k, 1.5);
+
+      const minX = contentBounds.minX - padX;
+      const maxX = contentBounds.maxX + padX;
+      const minY = contentBounds.minY - padY;
+      const maxY = contentBounds.maxY + padY;
+
+      const minTx = width - maxX * k;
+      const maxTx = -minX * k;
+      const minTy = height - maxY * k;
+      const maxTy = -minY * k;
 
       const nextX =
         minTx > maxTx
