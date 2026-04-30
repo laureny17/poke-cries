@@ -99,10 +99,9 @@ code {
 }
 
 .cluster-outline {
-  stroke: rgba(26, 26, 46, 0.42);
-  stroke-width: 1.5;
-  stroke-dasharray: 7 6;
-  vector-effect: non-scaling-stroke;
+  stroke-width: 1.8;
+  stroke-opacity: 0.5;
+  stroke-linecap: butt;
   pointer-events: none;
 }
 
@@ -128,8 +127,21 @@ code {
 }
 
 .graph-cluster-tooltip {
-  border-color: #a8b0c8;
-  box-shadow: 4px 4px 0px #a8b0c8;
+  border-color: transparent;
+  background:
+    linear-gradient(#ffffff, #ffffff) padding-box,
+    var(--cluster-type-gradient, linear-gradient(#a8b0c8, #a8b0c8)) border-box;
+  box-shadow: 4px 4px 0px var(--cluster-shadow-color, #a8b0c8);
+}
+
+.graph-tooltip-sprite {
+  float: right;
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  margin: -8px -6px 4px 10px;
+  pointer-events: none;
 }
 
 .graph-tooltip-name {
