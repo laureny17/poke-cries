@@ -730,7 +730,8 @@ export const SimilarityGraph = ({
       .attr("height", height);
 
     const g = svg.append("g");
-    // Immediately sync g's transform so the graph doesn't flash to origin.
+    // Restore the previous transform so the graph doesn't flash to origin on
+    // rebuild.
     if (previousTransform && !selectedPokemon) {
       g.attr("transform", previousTransform);
     }
@@ -1243,6 +1244,9 @@ export const SimilarityGraph = ({
 
     node.on("dblclick", (event, d) => {
       event.stopPropagation();
+      if (tutorialStep === 1) {
+        return;
+      }
       if (
         tutorialStep === 2 &&
         tutorialSelectedStarter &&
@@ -1692,7 +1696,7 @@ export const SimilarityGraph = ({
 
     const contentBounds = layoutNodes.reduce(
       (bounds, node) => {
-        const padding = selectedPokemon ? 24 : 58;
+        const padding = selectedPokemon ? 52 : 120;
         return {
           minX: Math.min(bounds.minX, node.x - node.radius - padding),
           maxX: Math.max(bounds.maxX, node.x + node.radius + padding),
@@ -1724,8 +1728,8 @@ export const SimilarityGraph = ({
       // Padding shrinks as zoom increases so you can't pan into whitespace when
       // zoomed in, but you get generous freedom when zoomed out.
       // pad ∝ 1/k^1.5  →  screen-space freedom = pad*k ∝ 1/√k  (halves every 4× zoom).
-      const basePadX = selectedPokemon ? 280 : 220;
-      const basePadY = selectedPokemon ? 180 : 140;
+      const basePadX = selectedPokemon ? 520 : 380;
+      const basePadY = selectedPokemon ? 340 : 240;
       const padX = basePadX / Math.pow(k, 1.5);
       const padY = basePadY / Math.pow(k, 1.5);
 
@@ -1799,7 +1803,7 @@ export const SimilarityGraph = ({
           .scale(zoomScale)
           .translate(-tutorialNode.x, -tutorialNode.y);
 
-        svg.call(zoom.transform, d3.zoomIdentity);
+        svg.interrupt();
         svg
           .transition()
           .delay(250)
@@ -1878,8 +1882,7 @@ export const SimilarityGraph = ({
 
     // Ping ring: appears mid-zoom, expands outward and fades so the eye is
     // drawn straight to the pokemon without any permanent visual clutter.
-    const typeColor =
-      TYPE_COLORS[(node.types || [])[0]] || "#ffffff";
+    const typeColor = TYPE_COLORS[(node.types || [])[0]] || "#ffffff";
     const r = node.radius;
     const nodeGroup = svg
       .selectAll("g.node")

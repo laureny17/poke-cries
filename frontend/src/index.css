@@ -73,10 +73,10 @@ code {
 
 .graph-root {
   position: absolute;
-  left: -4vw;
-  top: -4vh;
-  width: 108vw;
-  height: 108vh;
+  left: -14vw;
+  top: -14vh;
+  width: 128vw;
+  height: 128vh;
   overflow: visible;
 }
 
@@ -749,6 +749,159 @@ code {
 .tutorial-dialog-step2 .tutorial-title {
   font-size: 20px;
   margin-bottom: 8px;
+}
+
+/* ── Tutorial Cursor Demo (tcd) ──────────────────────────────────────────── */
+/* position:fixed — immune to SVG zoom/pan transforms */
+.tcd-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 26;
+}
+
+.tcd-cursor {
+  position: fixed;
+  pointer-events: none;
+  width: 16px;
+  height: 22px;
+}
+
+/* Cursor A: hovers a cluster outline (~left-center of screen) */
+.tcd-cursor-a {
+  animation: tcd-move-a 6s ease-in-out infinite;
+}
+
+/* Cursor B: hovers a Pokémon node (~right-center) — offset so they alternate */
+.tcd-cursor-b {
+  animation: tcd-move-b 6s ease-in-out infinite;
+  animation-delay: 3s;
+}
+
+.tcd-ripple {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+
+/* Ripple at cluster target — fires when cursor A arrives */
+.tcd-ripple-a {
+  left: 33vw;
+  top: 52vh;
+  border: 2px solid rgba(168, 176, 200, 0.85);
+  animation: tcd-ripple 6s ease-out infinite;
+  animation-delay: 1.5s;
+}
+
+/* Ripple at Pokémon target — fires when cursor B arrives */
+.tcd-ripple-b {
+  left: 62vw;
+  top: 37vh;
+  border: 2px solid rgba(100, 180, 210, 0.85);
+  animation: tcd-ripple 6s ease-out infinite;
+  animation-delay: 4.5s;
+}
+
+/* Cursor A: approach cluster outline from upper-left, hover, retreat */
+@keyframes tcd-move-a {
+  0% {
+    left: 26vw;
+    top: 46vh;
+    opacity: 0;
+  }
+  5% {
+    left: 26vw;
+    top: 46vh;
+    opacity: 1;
+  }
+  25% {
+    left: 32.5vw;
+    top: 51.5vh;
+    opacity: 1;
+  }
+  55% {
+    left: 32.5vw;
+    top: 51.5vh;
+    opacity: 1;
+  }
+  70% {
+    left: 26vw;
+    top: 46vh;
+    opacity: 0;
+  }
+  100% {
+    left: 26vw;
+    top: 46vh;
+    opacity: 0;
+  }
+}
+
+/* Cursor B: approach Pokémon node from upper-left, hover, retreat */
+@keyframes tcd-move-b {
+  0% {
+    left: 57vw;
+    top: 32vh;
+    opacity: 0;
+  }
+  5% {
+    left: 57vw;
+    top: 32vh;
+    opacity: 1;
+  }
+  25% {
+    left: 61.5vw;
+    top: 36.5vh;
+    opacity: 1;
+  }
+  55% {
+    left: 61.5vw;
+    top: 36.5vh;
+    opacity: 1;
+  }
+  70% {
+    left: 57vw;
+    top: 32vh;
+    opacity: 0;
+  }
+  100% {
+    left: 57vw;
+    top: 32vh;
+    opacity: 0;
+  }
+}
+
+/* Shared ripple: expand outward then fade */
+@keyframes tcd-ripple {
+  0% {
+    width: 0;
+    height: 0;
+    margin-left: 0;
+    margin-top: 0;
+    opacity: 0;
+  }
+  4% {
+    width: 0;
+    height: 0;
+    margin-left: 0;
+    margin-top: 0;
+    opacity: 0.85;
+  }
+  65% {
+    width: 56px;
+    height: 56px;
+    margin-left: -28px;
+    margin-top: -28px;
+    opacity: 0;
+  }
+  100% {
+    width: 0;
+    height: 0;
+    margin-left: 0;
+    margin-top: 0;
+    opacity: 0;
+  }
 }
 
 /* ── Tutorial Step 3: Explanation ────────────────────────────────────────── */

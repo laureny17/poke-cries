@@ -6,6 +6,10 @@ const GEN_I_STARTERS = [
   { id: 7, name: "Squirtle" },
 ];
 
+// Internal steps: 1=pokéball, 2=click instructions, 3=zoom+dblclick, 4=explanation
+// External steps reported to App: 1,2 → 1 (overview), 3 → 2 (zoom), 4 → 3 (detail)
+const toExternalStep = (s) => (s <= 2 ? 1 : s - 1);
+
 export const Tutorial = ({
   graphData,
   selectedPokemon,
@@ -21,21 +25,17 @@ export const Tutorial = ({
   const [openingPokeballs, setOpeningPokeballs] = useState(new Set());
   const [closingPokeball, setClosingPokeball] = useState(null);
 
-  // Sync internal step with parent
   useEffect(() => {
-    if (onStepChange) {
-      onStepChange(step);
-    }
+    if (onStepChange) onStepChange(toExternalStep(step));
   }, [step, onStepChange]);
 
+  // Advance from zoom step to explanation when user double-clicks starter
   useEffect(() => {
-    if (onStarterChange) {
-      onStarterChange(selectedStarter);
-    }
-  }, [selectedStarter, onStarterChange]);
+    if (step !== 3 || selectedPokemon !== selectedStarter) return;
+    setStep(4);
+  }, [selectedPokemon, selectedStarter, step]);
 
   const handlePokeballClick = (pokemonId) => {
-    // If clicking a different pokéball, close the previous one first
     if (
       selectedStarter &&
       selectedStarter !== pokemonId &&
@@ -52,7 +52,6 @@ export const Tutorial = ({
       }, 600);
     }
 
-    // Start opening animation
     setOpeningPokeballs((prev) => {
       const next = new Set(prev);
       next.add(pokemonId);
@@ -60,7 +59,6 @@ export const Tutorial = ({
     });
     setSelectedStarter(pokemonId);
 
-    // Transition to fully opened after animation
     setTimeout(() => {
       setOpeningPokeballs((prev) => {
         const next = new Set(prev);
@@ -75,36 +73,18 @@ export const Tutorial = ({
     }, 600);
   };
 
+  // Step 1 → 2: just advance; starter reported to App when entering the zoom step
   const handleContinueFromStep1 = () => {
-    if (onStarterChange) {
-      onStarterChange(selectedStarter);
-    }
     setStep(2);
   };
 
-  const handleDoubleClickAdvance = () => {
+  // Step 2 → 3: now report the starter so the graph zoom triggers
+  const handleContinueToZoom = () => {
+    if (onStarterChange) onStarterChange(selectedStarter);
     setStep(3);
   };
 
-  // Listen for double-click on selected pokemon to advance from step 2
-  useEffect(() => {
-    if (step !== 2 || selectedPokemon !== selectedStarter) {
-      return;
-    }
-
-    // The SimilarityGraph will handle the double-click; we'll detect it via selectedPokemon
-    handleDoubleClickAdvance();
-  }, [selectedPokemon, selectedStarter, step]);
-
-  const handleComplete = () => {
-    onComplete();
-  };
-
-  const handleSkip = () => {
-    onSkip();
-  };
-
-  // Step 1: Pokéball Picker
+  // ── Step 1: Pokéball Picker ───────────────────────────────────────────────
   if (step === 1) {
     return (
       <div className="tutorial-overlay">
@@ -172,8 +152,38 @@ export const Tutorial = ({
     );
   }
 
-  // Step 2: Spotlight Effect
-  if (step === 2 && selectedStarter) {
+  // ── Step 2: Click Instructions ────────────────────────────────────────────
+  if (step === 2) {
+    return (
+      <div className="tutorial-step2" aria-label="click instructions">
+        <div className="tutorial-dialog tutorial-dialog-step2">
+          <h2 className="tutorial-title">Explore the Graph</h2>
+          <p className="tutorial-text">
+            <strong>Hover any Pokémon</strong> to see its details.{" "}
+            <strong>Hover a dotted cluster outline</strong> to learn about that
+            sound group.
+          </p>
+          <p className="tutorial-text" style={{ marginTop: 6 }}>
+            <strong>Click any Pokémon</strong> to hear its cry.
+          </p>
+          <div className="tutorial-buttons">
+            <button
+              className="tutorial-continue-btn"
+              onClick={handleContinueToZoom}
+            >
+              Continue →
+            </button>
+          </div>
+          <button className="tutorial-skip-btn" onClick={onSkip}>
+            Skip Tutorial
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Step 3: Zoom spotlight + double-click instruction ─────────────────────
+  if (step === 3 && selectedStarter) {
     const starterName =
       GEN_I_STARTERS.find((s) => s.id === selectedStarter)?.name ||
       "Your Pokémon";
@@ -183,8 +193,8 @@ export const Tutorial = ({
         <div className="tutorial-dialog tutorial-dialog-step2">
           <h2 className="tutorial-title">Found {starterName}!</h2>
           <p className="tutorial-text">
-            Double-click on {starterName} in the graph to see its audio
-            neighborhood.
+            Double-click on {starterName} in the graph to open its
+            Pokémon-specific graph.
           </p>
           <p
             className="tutorial-text"
@@ -192,7 +202,7 @@ export const Tutorial = ({
           >
             This will show you which other Pokémon have similar cries.
           </p>
-          <button className="tutorial-skip-btn" onClick={handleSkip}>
+          <button className="tutorial-skip-btn" onClick={onSkip}>
             Skip Tutorial
           </button>
         </div>
@@ -200,8 +210,8 @@ export const Tutorial = ({
     );
   }
 
-  // Step 3: Explanation
-  if (step === 3) {
+  // ── Step 4: Explanation ───────────────────────────────────────────────────
+  if (step === 4) {
     return (
       <div className="tutorial-overlay">
         <div className="tutorial-modal">
@@ -218,12 +228,12 @@ export const Tutorial = ({
             </ul>
             <p className="tutorial-text">
               Return to overview mode to see broader audio neighborhoods. Use
-              the search bar to center this similarity graph on another
-              Pokémon, or double-click any Pokémon to recenter the view there.
+              the search bar to center this similarity graph on another Pokémon,
+              or double-click any Pokémon to recenter the view there.
             </p>
           </div>
           <div className="tutorial-buttons">
-            <button className="tutorial-complete-btn" onClick={handleComplete}>
+            <button className="tutorial-complete-btn" onClick={onComplete}>
               Got It! ✓
             </button>
           </div>
