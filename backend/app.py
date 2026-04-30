@@ -118,7 +118,7 @@ def load_data():
         ]
         oversized_cached_cluster = bool(cluster_sizes) and max(
             cluster_sizes,
-        ) > max(160, len(overview_layout) * 0.2)
+        ) > max(70, len(overview_layout) * 0.08)
         if similarity_data is not None and (
             not overview_layout
             or missing_representativeness

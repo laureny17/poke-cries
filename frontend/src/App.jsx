@@ -16,7 +16,7 @@ import "./App.css";
 // Max Pokémon shown in the overview graph at once.
 // Keeps the force simulation fast and the graph readable.
 const MAX_NODES = 400;
-const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v9";
+const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v10";
 
 export default function App() {
   const [selectedPokemon, setSelectedPokemon] = useState(null);

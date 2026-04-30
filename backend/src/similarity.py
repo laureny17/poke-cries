@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .audio_processor import AXIS_FEATURES, _feature_slices, project_melodic_complexity_axes
 
-OVERVIEW_LAYOUT_VERSION = 10
+OVERVIEW_LAYOUT_VERSION = 11
 
 try:
     from sklearn.manifold import SpectralEmbedding
