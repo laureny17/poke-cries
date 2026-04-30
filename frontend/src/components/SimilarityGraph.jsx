@@ -124,6 +124,7 @@ export const SimilarityGraph = ({
   onPokemonSelect,
   onPokemonClick,
   onPokemonHover,
+  focusTarget = null,
   similarPokemon = [],
   similarityById = {},
   selectedNode,
@@ -138,6 +139,8 @@ export const SimilarityGraph = ({
   const svgRef = useRef();
   const simulationRef = useRef();
   const wrapperRef = useRef();
+  const zoomRef = useRef();
+  const layoutNodesRef = useRef([]);
   const [tooltip, setTooltip] = useState(null);
   const [clusterTooltip, setClusterTooltip] = useState(null);
 
@@ -714,6 +717,11 @@ export const SimilarityGraph = ({
       }
     }
 
+    // Capture current zoom position before wiping children so we can restore it.
+    const previousTransform = svgRef.current
+      ? d3.zoomTransform(svgRef.current)
+      : null;
+
     d3.select(svgRef.current).selectAll("*").remove();
 
     const svg = d3
@@ -722,6 +730,10 @@ export const SimilarityGraph = ({
       .attr("height", height);
 
     const g = svg.append("g");
+    // Immediately sync g's transform so the graph doesn't flash to origin.
+    if (previousTransform && !selectedPokemon) {
+      g.attr("transform", previousTransform);
+    }
 
     const defs = svg.append("defs");
     layoutNodes.forEach((node) => {
@@ -1755,6 +1767,8 @@ export const SimilarityGraph = ({
         g.attr("transform", event.transform);
       });
 
+    zoomRef.current = zoom;
+    layoutNodesRef.current = layoutNodes;
     svg.call(zoom);
     if (selectedPokemon) {
       const centerRadius = getNodeRadius({ pokemon_id: selectedPokemon });
@@ -1842,6 +1856,76 @@ export const SimilarityGraph = ({
       };
     });
   }, [tooltip, pokemonDetailsById]);
+
+  useEffect(() => {
+    if (!focusTarget || selectedPokemon) return;
+    const node = layoutNodesRef.current.find(
+      (n) => n.pokemon_id === focusTarget.id,
+    );
+    const svg = d3.select(svgRef.current);
+    const zoom = zoomRef.current;
+    if (!node || !zoom || !svgRef.current) return;
+
+    const width = svgRef.current.clientWidth;
+    const height = svgRef.current.clientHeight;
+    const scale = 3;
+    const target = d3.zoomIdentity
+      .translate(width / 2, height / 2)
+      .scale(scale)
+      .translate(-node.x, -node.y);
+
+    svg.transition().duration(700).call(zoom.transform, target);
+
+    // Ping ring: appears mid-zoom, expands outward and fades so the eye is
+    // drawn straight to the pokemon without any permanent visual clutter.
+    const typeColor =
+      TYPE_COLORS[(node.types || [])[0]] || "#ffffff";
+    const r = node.radius;
+    const nodeGroup = svg
+      .selectAll("g.node")
+      .filter((d) => d.pokemon_id === focusTarget.id);
+
+    if (!nodeGroup.empty()) {
+      // outer expanding ring
+      nodeGroup
+        .append("circle")
+        .attr("class", "search-ping")
+        .attr("r", r + 2)
+        .attr("fill", "none")
+        .attr("stroke", typeColor)
+        .attr("stroke-width", 2.5)
+        .attr("opacity", 0)
+        .attr("pointer-events", "none")
+        .transition()
+        .delay(350)
+        .duration(150)
+        .attr("opacity", 1)
+        .transition()
+        .duration(900)
+        .ease(d3.easeCubicOut)
+        .attr("r", r + 20)
+        .attr("opacity", 0)
+        .attr("stroke-width", 0.5)
+        .remove();
+
+      // inner solid glow that lingers a bit longer
+      nodeGroup
+        .append("circle")
+        .attr("class", "search-ping")
+        .attr("r", r + 1)
+        .attr("fill", typeColor)
+        .attr("opacity", 0)
+        .attr("pointer-events", "none")
+        .transition()
+        .delay(350)
+        .duration(100)
+        .attr("opacity", 0.35)
+        .transition()
+        .duration(1400)
+        .attr("opacity", 0)
+        .remove();
+    }
+  }, [focusTarget, selectedPokemon]);
 
   return (
     <div className="graph-root" ref={wrapperRef}>

@@ -20,6 +20,7 @@ const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v10";
 
 export default function App() {
   const [selectedPokemon, setSelectedPokemon] = useState(null);
+  const [focusTarget, setFocusTarget] = useState(null);
   const [similarPokemon, setSimilarPokemon] = useState([]);
   const [graphData, setGraphData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -475,7 +476,9 @@ export default function App() {
       )}
 
       {graphData && !showTutorial && !showIntro && (
-        <SearchBar nodes={graphData.nodes} onSelect={setSelectedPokemon} />
+        <SearchBar nodes={graphData.nodes} onSelect={(id) => {
+          setFocusTarget((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }));
+        }} />
       )}
 
       {selectedPokemon && !showTutorial ? (
@@ -527,6 +530,7 @@ export default function App() {
           onPokemonSelect={setSelectedPokemon}
           onPokemonClick={playPokemonCry}
           onPokemonHover={ensurePokemonDetails}
+          focusTarget={focusTarget}
           similarPokemon={similarPokemon}
           similarityById={similarityById}
           selectedNode={selectedNode}
