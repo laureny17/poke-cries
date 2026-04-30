@@ -488,6 +488,67 @@ export const SimilarityGraph = ({
           y,
         };
       });
+    } else {
+      const nodesByClusterId = new Map();
+      baseLayoutNodes.forEach((node) => {
+        if (node.cluster_id == null) {
+          return;
+        }
+
+        if (!nodesByClusterId.has(node.cluster_id)) {
+          nodesByClusterId.set(node.cluster_id, []);
+        }
+        nodesByClusterId.get(node.cluster_id).push(node);
+      });
+
+      const COMPACT_CLUSTER_ANGLE = Math.PI * (3 - Math.sqrt(5));
+      layoutNodes = baseLayoutNodes.map((node) => ({ ...node }));
+
+      nodesByClusterId.forEach((clusterNodes) => {
+        if (clusterNodes.length <= 1) {
+          return;
+        }
+
+        const clusterPokemonIds = new Set(
+          clusterNodes.map((node) => node.pokemon_id),
+        );
+        const compactNodes = layoutNodes
+          .filter((node) => clusterPokemonIds.has(node.pokemon_id))
+          .sort((a, b) => {
+            const representativeDelta =
+              Number(b.pokemon_id === b.cluster_representative_id) -
+              Number(a.pokemon_id === a.cluster_representative_id);
+            if (representativeDelta !== 0) {
+              return representativeDelta;
+            }
+            return a.pokemon_id - b.pokemon_id;
+          });
+
+        const clusterCenterX =
+          compactNodes.reduce((sum, node) => sum + node.anchorX, 0) /
+          compactNodes.length;
+        const clusterCenterY =
+          compactNodes.reduce((sum, node) => sum + node.anchorY, 0) /
+          compactNodes.length;
+        const packStep = Math.max(
+          8,
+          Math.min(11, 14 - compactNodes.length * 0.12),
+        );
+
+        compactNodes.forEach((node, index) => {
+          const radius = index === 0 ? 0 : Math.sqrt(index) * packStep;
+          const angle = index * COMPACT_CLUSTER_ANGLE;
+          const x = clusterCenterX + Math.cos(angle) * radius;
+          const y = clusterCenterY + Math.sin(angle) * radius;
+
+          node.anchorX = x;
+          node.anchorY = y;
+          node.tx = x;
+          node.ty = y;
+          node.x = x;
+          node.y = y;
+        });
+      });
     }
 
     const layoutLinks = focusedLinks.map((link) => ({ ...link }));
