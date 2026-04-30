@@ -34,6 +34,15 @@ MUST_LINK_GROUPS = [
     # User-identified squeaky/chirpy family; these are very close by ear and
     # should not be split just because one descriptor drifts.
     (10, 12, 27, 33, 36, 116),
+    # CLAP keeps Orbeetle just outside the Eldegoss/Dottler sparkle cluster;
+    # by ear it belongs with that brighter, glintier neighborhood.
+    (826, 830),
+    # Keep this ghostly hypnotic family from being swallowed by adjacent
+    # rougher/roaring cries when a broad learned embedding says both are close.
+    (92, 96, 97),
+    # These three form a harsher, roaring branch that should not force the
+    # Gastly/Drowzee/Hypno family into the same visual island.
+    (45, 142, 146),
 ]
 
 
@@ -300,7 +309,10 @@ def _apply_must_link_groups(
             for target in indices[i + 1:]:
                 pair_scores.append(float(raw_similarity[source, target]))
 
-        if pair_scores and min(pair_scores) >= 0.86 and float(np.mean(pair_scores)) >= 0.91:
+        if pair_scores and (
+            (len(indices) == 2 and min(pair_scores) >= 0.84)
+            or (min(pair_scores) >= 0.86 and float(np.mean(pair_scores)) >= 0.91)
+        ):
             protected_indices.update(indices)
             seed_clusters.append(np.array(sorted(indices), dtype=int))
 
@@ -796,7 +808,7 @@ def compute_overview_layout(
         clusters,
         key=lambda cluster_indices: (-len(cluster_indices), int(np.min(cluster_indices))),
     )
-    min_visual_cluster_size = 3 if n < 260 else 4
+    min_visual_cluster_size = 2 if is_neural_embedding else (3 if n < 260 else 4)
     clusters = _merge_tiny_clusters(clusters, raw_similarity, min_visual_cluster_size)
     clusters = sorted(
         clusters,

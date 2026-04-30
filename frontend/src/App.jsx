@@ -16,7 +16,7 @@ import "./App.css";
 // Max Pokémon shown in the overview graph at once.
 // Keeps the force simulation fast and the graph readable.
 const MAX_NODES = 400;
-const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v8";
+const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v9";
 
 export default function App() {
   const [selectedPokemon, setSelectedPokemon] = useState(null);
@@ -338,6 +338,83 @@ export default function App() {
     });
   }, [graphData, filteredNodeIdxSet]);
 
+  const visibleClusterNodes = useMemo(() => {
+    if (selectedPokemon || filteredNodes.length === 0) return filteredNodes;
+
+    const minVisibleClusterSize = 3;
+    const clusterByPokemonId = new Map(
+      filteredNodes.map((node) => [node.pokemon_id, node.cluster_id]),
+    );
+    const nodeByGraphId = new Map(filteredNodes.map((node) => [node.id, node]));
+
+    const countClusters = () => {
+      const counts = new Map();
+      clusterByPokemonId.forEach((clusterId) => {
+        counts.set(clusterId, (counts.get(clusterId) || 0) + 1);
+      });
+      return counts;
+    };
+
+    const sortedLinks = filteredLinks
+      .map((link) => {
+        const source =
+          typeof link.source === "object" ? link.source.id : link.source;
+        const target =
+          typeof link.target === "object" ? link.target.id : link.target;
+        return { source, target, similarity: link.similarity || 0 };
+      })
+      .filter(
+        (link) =>
+          nodeByGraphId.has(link.source) && nodeByGraphId.has(link.target),
+      )
+      .sort((a, b) => b.similarity - a.similarity);
+
+    for (let pass = 0; pass < 3; pass += 1) {
+      const counts = countClusters();
+      const tinyNodes = filteredNodes.filter(
+        (node) => (counts.get(clusterByPokemonId.get(node.pokemon_id)) || 0) < minVisibleClusterSize,
+      );
+      if (tinyNodes.length === 0) break;
+
+      let changed = false;
+      tinyNodes.forEach((node) => {
+        const currentCluster = clusterByPokemonId.get(node.pokemon_id);
+        const bestLink = sortedLinks.find((link) => {
+          if (link.source !== node.id && link.target !== node.id) return false;
+          const neighborId = link.source === node.id ? link.target : link.source;
+          const neighbor = nodeByGraphId.get(neighborId);
+          if (!neighbor) return false;
+          const neighborCluster = clusterByPokemonId.get(neighbor.pokemon_id);
+          return (
+            neighborCluster !== currentCluster &&
+            (counts.get(neighborCluster) || 0) >= minVisibleClusterSize
+          );
+        });
+
+        if (!bestLink) return;
+        const neighborId = bestLink.source === node.id ? bestLink.target : bestLink.source;
+        const neighbor = nodeByGraphId.get(neighborId);
+        clusterByPokemonId.set(
+          node.pokemon_id,
+          clusterByPokemonId.get(neighbor.pokemon_id),
+        );
+        changed = true;
+      });
+
+      if (!changed) break;
+    }
+
+    const finalCounts = countClusters();
+    return filteredNodes.map((node) => {
+      const clusterId = clusterByPokemonId.get(node.pokemon_id);
+      return {
+        ...node,
+        cluster_id: clusterId,
+        cluster_size: finalCounts.get(clusterId) || node.cluster_size,
+      };
+    });
+  }, [filteredLinks, filteredNodes, selectedPokemon]);
+
   // Which excluded gens/types, if un-excluded, would push the count over MAX_NODES.
   // Passed to SettingsPanel so it can show a tooltip on those checkboxes.
   const overMaxGens = useMemo(() => {
@@ -444,7 +521,7 @@ export default function App() {
         <div className="center-loading">Loading ...</div>
       ) : graphData ? (
         <SimilarityGraph
-          nodes={filteredNodes}
+          nodes={visibleClusterNodes}
           links={filteredLinks}
           selectedPokemon={selectedPokemon}
           onPokemonSelect={setSelectedPokemon}
