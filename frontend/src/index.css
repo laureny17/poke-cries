@@ -99,15 +99,23 @@ code {
 }
 
 .cluster-outline {
-  stroke-width: 1.8;
-  stroke-opacity: 0.5;
-  stroke-linecap: butt;
+  pointer-events: none;
+}
+
+.cluster-outline-measure {
+  fill: none;
+  stroke: none;
+  pointer-events: none;
+}
+
+.cluster-outline-dot {
+  opacity: 0.5;
   pointer-events: none;
 }
 
 .cluster-outline-hit-area {
   stroke: transparent;
-  stroke-width: 14;
+  stroke-width: 9;
   vector-effect: non-scaling-stroke;
   cursor: help;
   pointer-events: stroke;

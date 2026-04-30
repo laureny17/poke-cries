@@ -433,6 +433,10 @@ export const SimilarityGraph = ({
       return undefined;
     }
 
+    // Reset transient hover UI whenever the graph scene is rebuilt.
+    setTooltip(null);
+    setClusterTooltip(null);
+
     const width = svgRef.current.clientWidth;
     const height = svgRef.current.clientHeight;
     const centerX = width / 2;
@@ -660,17 +664,15 @@ export const SimilarityGraph = ({
 
       clusterLayouts.forEach((clusterLayout) => {
         const clusterNodes = clusterLayout.nodes;
-        const compactNodes = clusterNodes
-          .slice()
-          .sort((a, b) => {
-            const representativeDelta =
-              Number(b.pokemon_id === b.cluster_representative_id) -
-              Number(a.pokemon_id === a.cluster_representative_id);
-            if (representativeDelta !== 0) {
-              return representativeDelta;
-            }
-            return a.pokemon_id - b.pokemon_id;
-          });
+        const compactNodes = clusterNodes.slice().sort((a, b) => {
+          const representativeDelta =
+            Number(b.pokemon_id === b.cluster_representative_id) -
+            Number(a.pokemon_id === a.cluster_representative_id);
+          if (representativeDelta !== 0) {
+            return representativeDelta;
+          }
+          return a.pokemon_id - b.pokemon_id;
+        });
 
         const packStep = Math.max(
           8,
@@ -881,27 +883,14 @@ export const SimilarityGraph = ({
       return d3.line().curve(d3.curveCardinalClosed.tension(0.72))(hull);
     };
 
-    const getClusterTypeDashes = (typeSegments) => {
-      const dashPercent = 2.15;
-      const gapPercent = 1.65;
-
-      return typeSegments.flatMap((segment) => {
-        const dashes = [];
-        const segmentEnd = segment.offset + segment.percent;
-        let cursor = segment.offset;
-
-        while (cursor < segmentEnd - 0.01) {
-          const percent = Math.min(dashPercent, segmentEnd - cursor);
-          dashes.push({
-            ...segment,
-            offset: cursor,
-            percent,
-          });
-          cursor += percent + gapPercent;
-        }
-
-        return dashes;
-      });
+    const getClusterTypeColorAt = (typeSegments, percent) => {
+      const segment =
+        typeSegments.find(
+          (candidate) =>
+            percent >= candidate.offset &&
+            percent < candidate.offset + candidate.percent,
+        ) || typeSegments[typeSegments.length - 1];
+      return segment?.color || "#7ec8e3";
     };
 
     const getClusterTypeGradient = (typeSegments) => {
@@ -938,9 +927,8 @@ export const SimilarityGraph = ({
 
       return {
         commonTypes: getMostCommonValues(typeValues).map(titleCase),
-        commonGenerations: getMostCommonValues(generationValues).map(
-          formatGeneration,
-        ),
+        commonGenerations:
+          getMostCommonValues(generationValues).map(formatGeneration),
         commonHabitats: getMostCommonValues(habitatValues).map(titleCase),
         medianHeight:
           medianHeight == null ? null : `${(medianHeight / 10).toFixed(1)}m`,
@@ -1035,7 +1023,6 @@ export const SimilarityGraph = ({
             nodes: clusterNodes,
             size: clusterNodes.length,
             typeSegments,
-            typeDashes: getClusterTypeDashes(typeSegments),
             summary: getClusterSummary(clusterNodes),
             representative,
             averageRepresentativeness:
@@ -1054,18 +1041,8 @@ export const SimilarityGraph = ({
         .attr("class", "cluster-outline-group");
 
       clusterOutline = clusterGroup
-        .selectAll("path.cluster-outline")
-        .data((cluster) =>
-          cluster.typeDashes.map((dash) => ({
-            ...dash,
-            cluster,
-          })),
-        )
-        .enter()
-        .append("path")
-        .attr("class", "cluster-outline")
-        .attr("stroke", (segment) => segment.color)
-        .attr("fill", "none");
+        .append("g")
+        .attr("class", "cluster-outline");
 
       clusterHitArea = clusterGroup
         .append("path")
@@ -1077,6 +1054,7 @@ export const SimilarityGraph = ({
             return;
           }
 
+          setTooltip(null);
           setClusterTooltip({
             x: event.clientX - bounds.left + 14,
             y: event.clientY - bounds.top - 12,
@@ -1188,6 +1166,8 @@ export const SimilarityGraph = ({
         return;
       }
 
+      setClusterTooltip(null);
+
       if (onPokemonHover) {
         onPokemonHover(d.pokemon_id);
       }
@@ -1262,6 +1242,11 @@ export const SimilarityGraph = ({
     });
 
     svg.on("click", () => {
+      setTooltip(null);
+      setClusterTooltip(null);
+    });
+
+    svg.on("mouseleave", () => {
       setTooltip(null);
       setClusterTooltip(null);
     });
@@ -1626,22 +1611,51 @@ export const SimilarityGraph = ({
         return;
       }
 
-      clusterOutline
-        .attr("d", (dash) => getClusterOutlinePath(dash.cluster))
-        .each(function updateSegmentDash(dash) {
-          const pathLength = this.getTotalLength();
-          const dashLength = Math.max((dash.percent / 100) * pathLength, 0.01);
-          const dashStart = (dash.offset / 100) * pathLength;
-          d3.select(this).attr(
-            "stroke-dasharray",
-            `${dashLength.toFixed(2)} ${Math.max(
-              pathLength - dashLength,
-              0.01,
-            ).toFixed(2)}`,
-          );
-          d3.select(this).attr("stroke-dashoffset", -dashStart);
-        });
       clusterHitArea.attr("d", getClusterOutlinePath);
+      clusterOutline.each(function updateClusterDots(cluster) {
+        const outlinePath = getClusterOutlinePath(cluster);
+        const outlineGroup = d3.select(this);
+        if (!outlinePath) {
+          outlineGroup.selectAll("*").remove();
+          return;
+        }
+
+        const measurePath = outlineGroup
+          .selectAll("path.cluster-outline-measure")
+          .data([cluster])
+          .join("path")
+          .attr("class", "cluster-outline-measure")
+          .attr("d", outlinePath);
+        const measureNode = measurePath.node();
+        const pathLength = measureNode?.getTotalLength?.() || 0;
+        const dotSpacing = 10;
+        const dotCount = Math.max(8, Math.floor(pathLength / dotSpacing));
+        const dots = Array.from({ length: dotCount }, (_, index) => {
+          const distance = (index / dotCount) * pathLength;
+          const point = measureNode.getPointAtLength(distance);
+          const percent = (index / dotCount) * 100;
+          return {
+            id: index,
+            x: point.x,
+            y: point.y,
+            color: getClusterTypeColorAt(cluster.typeSegments, percent),
+          };
+        });
+
+        outlineGroup
+          .selectAll("circle.cluster-outline-dot")
+          .data(dots, (dot) => dot.id)
+          .join(
+            (enter) =>
+              enter.append("circle").attr("class", "cluster-outline-dot"),
+            (update) => update,
+            (exit) => exit.remove(),
+          )
+          .attr("cx", (dot) => dot.x)
+          .attr("cy", (dot) => dot.y)
+          .attr("r", 1.45)
+          .attr("fill", (dot) => dot.color);
+      });
     };
 
     updateClusterOutlines();
