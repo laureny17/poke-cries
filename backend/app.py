@@ -3,19 +3,9 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
-from pathlib import Path
-import json
 import numpy as np
-from src.data_pipeline import (
-    build_similarity_matrix,
-    get_generation_pokemon,
-    load_similarity_data,
-    save_similarity_data,
-    get_pokemon_info,
-)
 from src.pokeapi_client import get_pokemon_data, get_pokemon_species
-from src.similarity import get_similar_pokemon, normalize_similarity, compute_distance
-from src.similarity import compute_overview_layout, OVERVIEW_LAYOUT_VERSION
+from src.data_store import DATA_FILE, load_similarity_data, save_similarity_data
 
 app = Flask(__name__)
 
@@ -31,7 +21,6 @@ CORS(
 
 # global state for cached similarity data (keeps the app less comutationally intensive)
 similarity_data = None
-DATA_FILE = Path(__file__).parent / "data" / "similarity_data.json"
 GENERATION_ROMAN = {
     1: "i",
     2: "ii",
@@ -76,66 +65,7 @@ def _matches_generation(gen_name: str, generation: int) -> bool:
 def load_data():
     global similarity_data
     if similarity_data is None and DATA_FILE.exists():
-        # keep the json cached in memory
         similarity_data = load_similarity_data(DATA_FILE)
-        overview_layout = (
-            similarity_data.get("overview_layout", {})
-            if similarity_data is not None
-            else {}
-        )
-        missing_representativeness = bool(overview_layout) and any(
-            "representativeness" not in position
-            for position in overview_layout.values()
-            if isinstance(position, dict)
-        )
-        missing_cluster_metadata = bool(overview_layout) and any(
-            "cluster_size" not in position
-            for position in overview_layout.values()
-            if isinstance(position, dict)
-        )
-        stale_layout_version = bool(overview_layout) and any(
-            position.get("layout_version") != OVERVIEW_LAYOUT_VERSION
-            for position in overview_layout.values()
-            if isinstance(position, dict)
-        )
-        representativeness_values = [
-            position.get("representativeness")
-            for position in overview_layout.values()
-            if isinstance(position, dict)
-            and isinstance(position.get("representativeness"), (int, float))
-        ]
-        stale_representativeness = bool(representativeness_values) and max(
-            representativeness_values,
-        ) < 0.05
-        low_representativeness_floor = bool(representativeness_values) and min(
-            representativeness_values,
-        ) < 0.19
-        cluster_sizes = [
-            position.get("cluster_size")
-            for position in overview_layout.values()
-            if isinstance(position, dict)
-            and isinstance(position.get("cluster_size"), (int, float))
-        ]
-        oversized_cached_cluster = bool(cluster_sizes) and max(
-            cluster_sizes,
-        ) > max(70, len(overview_layout) * 0.08)
-        if similarity_data is not None and (
-            not overview_layout
-            or missing_representativeness
-            or missing_cluster_metadata
-            or stale_layout_version
-            or stale_representativeness
-            or low_representativeness_floor
-            or oversized_cached_cluster
-        ):
-            # Generate or upgrade layout once here so the matrix endpoint can reuse it later.
-            overview_layout = compute_overview_layout(
-                list(similarity_data.get("pokemon_info", {}).keys()),
-                similarity_data.get("similarities", {}),
-                similarity_data.get("vectors", {}),
-            )
-            similarity_data["overview_layout"] = overview_layout
-            save_similarity_data(similarity_data, DATA_FILE)
 
 
 # health check
@@ -248,6 +178,8 @@ def get_similarity_neighbors(pokemon_id: int):
     if pokemon_id not in similarity_data["pokemon_info"]:
         return jsonify({"error": "Pokémon not found"}), 404
 
+    from src.similarity import compute_distance, get_similar_pokemon
+
     top_k = request.args.get("top_k", type=int, default=20)
     min_similarity = request.args.get("min_similarity", type=float, default=0.5)
 
@@ -302,6 +234,8 @@ def get_similarity_matrix():
 
     generation = request.args.get("generation", type=int)
     min_similarity = request.args.get("min_similarity", type=float, default=0.0)
+
+    from src.similarity import compute_distance, compute_overview_layout
 
     # filter pokemon by generation first
     filtered_pokemon = {}
@@ -364,6 +298,8 @@ def get_similarity_matrix():
 # get list of all generations along w/ counts of how many pokemon they have (for filtering UI)
 @app.route("/api/generations", methods=["GET"])
 def get_generations():
+    from src.data_pipeline import get_generation_pokemon
+
     generations = []
     for gen_id in range(1, 10):
         pokemon_ids = get_generation_pokemon(gen_id)
@@ -388,6 +324,8 @@ def build_similarity_matrix_endpoint():
     """
     generation = request.json.get("generation")
     force = request.json.get("force", False)
+
+    from src.data_pipeline import build_similarity_matrix, get_generation_pokemon
 
     # skip rebuilds unless the caller explicitly forces one
     if not force and DATA_FILE.exists():
@@ -416,6 +354,10 @@ def build_similarity_matrix_endpoint():
 
 
 if __name__ == "__main__":
-    load_data()
     port = int(os.getenv("PORT", "8000"))
-    app.run(debug=True, host="0.0.0.0", port=port)
+    app.run(
+        debug=os.getenv("FLASK_DEBUG") == "1",
+        host="0.0.0.0",
+        port=port,
+        use_reloader=False,
+    )
