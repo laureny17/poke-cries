@@ -65,11 +65,16 @@ export const apiClient = {
   },
 
   // Get similarity matrix for visualization
-  getSimilarityMatrix: async (generation = null, minSimilarity = 0.0) => {
+  getSimilarityMatrix: async (
+    generation = null,
+    minSimilarity = 0.0,
+    includeLinks = true
+  ) => {
     try {
       const params = new URLSearchParams();
       if (generation) params.append('generation', generation);
       params.append('min_similarity', minSimilarity);
+      params.append('include_links', includeLinks ? 'true' : 'false');
 
       const response = await axios.get(
         `${API_BASE}/similarity-matrix?${params}`

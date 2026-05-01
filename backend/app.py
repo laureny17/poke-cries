@@ -271,6 +271,7 @@ def get_similarity_matrix():
     params:
     - generation: filter by generation (1-9)
     - min_similarity: minimum similarity threshold (0-1)
+    - include_links: whether to include matrix edges (true/false, default true)
     """
     load_data()
 
@@ -279,8 +280,11 @@ def get_similarity_matrix():
 
     generation = request.args.get("generation", type=int)
     min_similarity = request.args.get("min_similarity", type=float, default=0.0)
-
-    from src.similarity import compute_distance, compute_overview_layout
+    include_links = request.args.get("include_links", default="true").lower() not in {
+        "0",
+        "false",
+        "no",
+    }
 
     # filter pokemon by generation first
     filtered_pokemon = {}
@@ -292,6 +296,8 @@ def get_similarity_matrix():
         filtered_pokemon[pid] = info
 
     if generation:
+        from src.similarity import compute_overview_layout
+
         overview_layout = compute_overview_layout(
             list(filtered_pokemon.keys()),
             similarity_data.get("similarities", {}),
@@ -317,22 +323,25 @@ def get_similarity_matrix():
             **info,
         })
 
-    # only keep edges that clear the similarity threshold
     links = []
-    for (pid1, pid2), score in similarity_data["similarities"].items():
-        if score < min_similarity:
-            continue
+    if include_links:
+        from src.similarity import compute_distance
 
-        if pid1 not in pid_to_idx or pid2 not in pid_to_idx:
-            continue
+        # only keep edges that clear the similarity threshold
+        for (pid1, pid2), score in similarity_data["similarities"].items():
+            if score < min_similarity:
+                continue
 
-        if pid1 < pid2:  # avoid duplicates
-            links.append({
-                "source": pid_to_idx[pid1],
-                "target": pid_to_idx[pid2],
-                "similarity": float(score),
-                "distance": compute_distance(score),
-            })
+            if pid1 not in pid_to_idx or pid2 not in pid_to_idx:
+                continue
+
+            if pid1 < pid2:  # avoid duplicates
+                links.append({
+                    "source": pid_to_idx[pid1],
+                    "target": pid_to_idx[pid2],
+                    "similarity": float(score),
+                    "distance": compute_distance(score),
+                })
 
     return jsonify({
         "nodes": nodes,

@@ -16,7 +16,7 @@ import "./App.css";
 // Max Pokémon shown in the overview graph at once.
 // Keeps the force simulation fast and the graph readable.
 const MAX_NODES = 400;
-const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v10";
+const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v11";
 
 export default function App() {
   const [selectedPokemon, setSelectedPokemon] = useState(null);
@@ -225,7 +225,7 @@ export default function App() {
       try {
         setLoading(!hasCachedData);
         setError(null);
-        const data = await apiClient.getSimilarityMatrix(null, 0.15);
+        const data = await apiClient.getSimilarityMatrix(null, 0.15, false);
         setGraphData(data);
         try {
           window.localStorage.setItem(GRAPH_CACHE_KEY, JSON.stringify(data));
