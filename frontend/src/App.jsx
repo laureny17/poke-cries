@@ -117,6 +117,7 @@ export default function App() {
   }, [graphData, getDefaultExcludedGenerations]); // graphData only transitions once: null → loaded
 
   const resetFilters = useCallback(() => {
+    setSelectedPokemon(null);
     setExcludedGenerations(getDefaultExcludedGenerations(graphData?.nodes));
     setExcludedTypes(new Set());
   }, [getDefaultExcludedGenerations, graphData]);
