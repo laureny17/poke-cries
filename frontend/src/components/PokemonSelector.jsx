@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { apiClient } from "../api/client";
+import { LoadingText } from "./LoadingText";
 
 export const PokemonSelector = ({
   generation,
@@ -29,7 +30,11 @@ export const PokemonSelector = ({
   }, [generation]);
 
   if (loading) {
-    return <div className="loading">Loading Pokémon...</div>;
+    return (
+      <div className="loading">
+        <LoadingText label="Loading Pokémon" />
+      </div>
+    );
   }
 
   if (error) {

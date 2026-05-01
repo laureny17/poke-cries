@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { apiClient } from "../api/client";
+import { LoadingText } from "./LoadingText";
 
 export const GenerationFilter = ({ value, onChange }) => {
   const [generations, setGenerations] = useState([]);
@@ -22,7 +23,13 @@ export const GenerationFilter = ({ value, onChange }) => {
     fetchGenerations();
   }, []);
 
-  if (loading) return <div className="control-group">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="control-group">
+        <LoadingText />
+      </div>
+    );
+  }
   if (error) return <div className="control-group error">Error: {error}</div>;
 
   return (

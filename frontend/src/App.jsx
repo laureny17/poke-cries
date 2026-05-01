@@ -10,6 +10,7 @@ import { SearchBar } from "./components/SearchBar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { IntroScreen } from "./components/IntroScreen";
 import { Tutorial } from "./components/Tutorial";
+import { LoadingText } from "./components/LoadingText";
 import { apiClient } from "./api/client";
 import "./App.css";
 
@@ -588,12 +589,7 @@ export default function App() {
 
       {showCenteredLoading ? (
         <div className="center-loading">
-          Loading
-          <span className="loading-dots" aria-hidden="true">
-            <span>.</span>
-            <span>.</span>
-            <span>.</span>
-          </span>
+          <LoadingText />
         </div>
       ) : graphData ? (
         <SimilarityGraph
