@@ -587,7 +587,14 @@ export default function App() {
       )}
 
       {showCenteredLoading ? (
-        <div className="center-loading">Loading ...</div>
+        <div className="center-loading">
+          Loading
+          <span className="loading-dots" aria-hidden="true">
+            <span>.</span>
+            <span>.</span>
+            <span>.</span>
+          </span>
+        </div>
       ) : graphData ? (
         <SimilarityGraph
           nodes={visibleClusterNodes}
