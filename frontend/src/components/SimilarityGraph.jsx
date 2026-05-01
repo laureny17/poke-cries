@@ -141,6 +141,7 @@ export const SimilarityGraph = ({
   const wrapperRef = useRef();
   const zoomRef = useRef();
   const layoutNodesRef = useRef([]);
+  const clickTimeoutRef = useRef(null);
   const [tooltip, setTooltip] = useState(null);
   const [clusterTooltip, setClusterTooltip] = useState(null);
 
@@ -1242,13 +1243,22 @@ export const SimilarityGraph = ({
       ) {
         return;
       }
-      if (onPokemonClick) {
-        onPokemonClick(d.pokemon_id);
+      if (!onPokemonClick) return;
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
       }
+      clickTimeoutRef.current = setTimeout(() => {
+        onPokemonClick(d.pokemon_id);
+        clickTimeoutRef.current = null;
+      }, 220);
     });
 
     node.on("dblclick", (event, d) => {
       event.stopPropagation();
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+        clickTimeoutRef.current = null;
+      }
       if (tutorialStep === 1) {
         return;
       }
@@ -1820,6 +1830,10 @@ export const SimilarityGraph = ({
     }
 
     return () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+        clickTimeoutRef.current = null;
+      }
       if (simulationRef.current) {
         simulationRef.current.stop();
       }

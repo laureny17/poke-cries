@@ -28,6 +28,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [pokemonDetailsById, setPokemonDetailsById] = useState({});
   const pokemonDetailsRequestsRef = useRef({});
+  const activeCryRef = useRef(null);
 
   // Intro & Tutorial state
   const [showIntro, setShowIntro] = useState(true);
@@ -201,8 +202,18 @@ export default function App() {
         : details?.cry_url || details?.cry_url_legacy;
     if (!cryUrl) return;
     try {
+      if (activeCryRef.current) {
+        activeCryRef.current.pause();
+        activeCryRef.current.currentTime = 0;
+      }
       const audio = new Audio(cryUrl);
+      activeCryRef.current = audio;
       audio.volume = 0.75;
+      audio.addEventListener("ended", () => {
+        if (activeCryRef.current === audio) {
+          activeCryRef.current = null;
+        }
+      });
       await audio.play();
     } catch (err) {
       console.error("Error playing cry audio:", err);
@@ -490,7 +501,7 @@ export default function App() {
         <Tutorial
           graphData={graphData}
           selectedPokemon={selectedPokemon}
-          tutorialStep={showTutorial ? tutorialStep : null}
+          tutorialStep={tutorialStep}
           onStepChange={setTutorialStep}
           onStarterChange={setTutorialSelectedStarter}
           onStarterReveal={playPokemonCry}
@@ -557,7 +568,7 @@ export default function App() {
           similarityById={similarityById}
           selectedNode={selectedNode}
           pokemonDetailsById={pokemonDetailsById}
-          tutorialStep={tutorialStep}
+          tutorialStep={showTutorial ? tutorialStep : null}
           tutorialSelectedStarter={
             showTutorial ? tutorialSelectedStarter : null
           }
