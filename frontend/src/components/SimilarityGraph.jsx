@@ -142,6 +142,7 @@ export const SimilarityGraph = ({
   const zoomRef = useRef();
   const layoutNodesRef = useRef([]);
   const clickTimeoutRef = useRef(null);
+  const selectedAutoFitKeyRef = useRef(null);
   const [tooltip, setTooltip] = useState(null);
   const [clusterTooltip, setClusterTooltip] = useState(null);
 
@@ -1791,24 +1792,37 @@ export const SimilarityGraph = ({
     svg.call(zoom);
     svg.on("dblclick.zoom", null);
     if (selectedPokemon) {
-      const centerRadius = getNodeRadius({ pokemon_id: selectedPokemon });
-      const nonCenterNodes = layoutNodes.filter(
-        (node) => node.pokemon_id !== selectedPokemon,
-      );
-      const maxExtent = nonCenterNodes.reduce((extent, node) => {
-        const dx = Math.abs(node.x - centerX) + node.radius + 24;
-        const dy = Math.abs(node.y - centerY) + node.radius + 24;
-        return Math.max(extent, dx, dy);
-      }, centerRadius + 24);
-      const fitScale = Math.min(width, height) / Math.max(maxExtent * 2, 1);
-      svg.call(
-        zoom.transform,
-        d3.zoomIdentity
-          .translate(width / 2, height / 2)
-          .scale(Math.max(minZoomScale, Math.min(1.05, fitScale)))
-          .translate(-centerX, -centerY),
-      );
-    } else if (tutorialStep === 2 && tutorialSelectedStarter) {
+      const selectedNeighborhoodReady =
+        similarPokemon.length > 0 && layoutNodes.length > 1;
+      const autoFitKey = `${selectedPokemon}:${
+        selectedNeighborhoodReady ? "ready" : "initial"
+      }`;
+      if (selectedAutoFitKeyRef.current !== autoFitKey) {
+        selectedAutoFitKeyRef.current = autoFitKey;
+
+        const centerRadius = getNodeRadius({ pokemon_id: selectedPokemon });
+        const nonCenterNodes = layoutNodes.filter(
+          (node) => node.pokemon_id !== selectedPokemon,
+        );
+        const maxExtent = nonCenterNodes.reduce((extent, node) => {
+          const dx = Math.abs(node.x - centerX) + node.radius + 24;
+          const dy = Math.abs(node.y - centerY) + node.radius + 24;
+          return Math.max(extent, dx, dy);
+        }, centerRadius + 24);
+        const fitScale = Math.min(width, height) / Math.max(maxExtent * 2, 1);
+        svg.call(
+          zoom.transform,
+          d3.zoomIdentity
+            .translate(width / 2, height / 2)
+            .scale(Math.max(minZoomScale, Math.min(1.05, fitScale)))
+            .translate(-centerX, -centerY),
+        );
+      }
+    } else {
+      selectedAutoFitKeyRef.current = null;
+    }
+
+    if (!selectedPokemon && tutorialStep === 2 && tutorialSelectedStarter) {
       const tutorialNode = layoutNodes.find(
         (node) => node.pokemon_id === tutorialSelectedStarter,
       );
@@ -1848,7 +1862,6 @@ export const SimilarityGraph = ({
     getNodeRadius,
     getTargetDistance,
     getSimilarityScore,
-    pokemonDetailsById,
     tutorialStep,
     tutorialSelectedStarter,
   ]);

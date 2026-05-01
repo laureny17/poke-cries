@@ -306,6 +306,23 @@ def get_similarity_matrix():
     else:
         overview_layout = similarity_data.get("overview_layout", {})
 
+    nearest_neighbors_by_pid = {pid: [] for pid in filtered_pokemon}
+    for (source_id, neighbor_id), score in similarity_data["similarities"].items():
+        if (
+            source_id == neighbor_id
+            or source_id not in filtered_pokemon
+            or neighbor_id not in filtered_pokemon
+        ):
+            continue
+        nearest_neighbors_by_pid[source_id].append({
+            "pokemon_id": neighbor_id,
+            "similarity": float(score),
+        })
+
+    for neighbors in nearest_neighbors_by_pid.values():
+        neighbors.sort(key=lambda neighbor: neighbor["similarity"], reverse=True)
+        del neighbors[16:]
+
     # build nodes for the frontend graph view
     nodes = []
     pid_to_idx = {}
@@ -314,6 +331,7 @@ def get_similarity_matrix():
         nodes.append({
             "id": idx,
             "pokemon_id": pid,
+            "nearest_neighbors": nearest_neighbors_by_pid.get(pid, []),
             "overview_x": overview_layout.get(pid, {}).get("x"),
             "overview_y": overview_layout.get(pid, {}).get("y"),
             "representativeness": overview_layout.get(pid, {}).get("representativeness"),

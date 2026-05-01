@@ -16,7 +16,7 @@ import "./App.css";
 // Max Pokémon shown in the overview graph at once.
 // Keeps the force simulation fast and the graph readable.
 const MAX_NODES = 400;
-const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v11";
+const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v12";
 
 export default function App() {
   const [selectedPokemon, setSelectedPokemon] = useState(null);
@@ -380,6 +380,9 @@ export default function App() {
       filteredNodes.map((node) => [node.pokemon_id, node.cluster_id]),
     );
     const nodeByGraphId = new Map(filteredNodes.map((node) => [node.id, node]));
+    const nodeByPokemonId = new Map(
+      filteredNodes.map((node) => [node.pokemon_id, node]),
+    );
 
     const countClusters = () => {
       const counts = new Map();
@@ -389,7 +392,25 @@ export default function App() {
       return counts;
     };
 
-    const sortedLinks = filteredLinks
+    const nearestLinks = [];
+    const seenNearestLinks = new Set();
+    filteredNodes.forEach((node) => {
+      (node.nearest_neighbors || []).forEach((neighbor) => {
+        const neighborNode = nodeByPokemonId.get(neighbor.pokemon_id);
+        if (!neighborNode) return;
+        const [a, b] = [node.id, neighborNode.id].sort((left, right) => left - right);
+        const key = `${a}|${b}`;
+        if (seenNearestLinks.has(key)) return;
+        seenNearestLinks.add(key);
+        nearestLinks.push({
+          source: node.id,
+          target: neighborNode.id,
+          similarity: neighbor.similarity || 0,
+        });
+      });
+    });
+
+    const sortedLinks = [...filteredLinks, ...nearestLinks]
       .map((link) => {
         const source =
           typeof link.source === "object" ? link.source.id : link.source;
