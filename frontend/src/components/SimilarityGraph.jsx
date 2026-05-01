@@ -1733,11 +1733,11 @@ export const SimilarityGraph = ({
     const contentWidth = Math.max(contentBounds.maxX - contentBounds.minX, 1);
     const contentHeight = Math.max(contentBounds.maxY - contentBounds.minY, 1);
     const overviewMinScale = Math.max(
-      0.15,
+      0.1,
       Math.min(
         1,
-        width / (contentWidth * 1.08),
-        height / (contentHeight * 1.08),
+        width / (contentWidth * 1.28),
+        height / (contentHeight * 1.28),
       ),
     );
     const minZoomScale = selectedPokemon ? 0.15 : overviewMinScale;
@@ -1747,8 +1747,8 @@ export const SimilarityGraph = ({
       // Padding shrinks as zoom increases so you can't pan into whitespace when
       // zoomed in, but you get generous freedom when zoomed out.
       // pad ∝ 1/k^1.5  →  screen-space freedom = pad*k ∝ 1/√k  (halves every 4× zoom).
-      const basePadX = selectedPokemon ? 520 : 380;
-      const basePadY = selectedPokemon ? 340 : 240;
+      const basePadX = selectedPokemon ? 520 : 560;
+      const basePadY = selectedPokemon ? 340 : 400;
       const padX = basePadX / Math.pow(k, 1.5);
       const padY = basePadY / Math.pow(k, 1.5);
 
