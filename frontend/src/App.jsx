@@ -16,7 +16,7 @@ import "./App.css";
 // Max Pokémon shown in the overview graph at once.
 // Keeps the force simulation fast and the graph readable.
 const MAX_NODES = 400;
-const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v12";
+const GRAPH_CACHE_PREFIX = "poke-cries:similarity-matrix:";
 const DEFAULT_GENERATION = "generation-i";
 
 export default function App() {
@@ -238,35 +238,21 @@ export default function App() {
   // Load the broad similarity matrix once on mount
   useEffect(() => {
     const loadMatrix = async () => {
-      let hasCachedData = false;
-
       try {
-        const cached = window.localStorage.getItem(GRAPH_CACHE_KEY);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (parsed?.nodes && parsed?.links) {
-            setGraphData(parsed);
-            hasCachedData = true;
-          }
-        }
+        Object.keys(window.localStorage)
+          .filter((key) => key.startsWith(GRAPH_CACHE_PREFIX))
+          .forEach((key) => window.localStorage.removeItem(key));
       } catch (err) {
-        console.warn("Error reading cached similarity matrix:", err);
+        console.warn("Error clearing cached similarity matrix:", err);
       }
 
       try {
-        setLoading(!hasCachedData);
+        setLoading(true);
         setError(null);
         const data = await apiClient.getSimilarityMatrix(null, 0.15, false);
         setGraphData(data);
-        try {
-          window.localStorage.setItem(GRAPH_CACHE_KEY, JSON.stringify(data));
-        } catch (err) {
-          console.warn("Error caching similarity matrix:", err);
-        }
       } catch (err) {
-        if (!hasCachedData) {
-          setError(err.message);
-        }
+        setError(err.message);
       } finally {
         setLoading(false);
       }
@@ -291,7 +277,7 @@ export default function App() {
         // without silently dropping less-similar pokemon.
         const data = await apiClient.getSimilarPokemon(
           selectedPokemon,
-          2000,
+          320,
           0.0,
         );
         if (isCancelled) return;

@@ -134,6 +134,7 @@ export const SimilarityGraph = ({
 }) => {
   const OVERVIEW_MAX_LINKS_PER_NODE = 5;
   const OVERVIEW_MIN_LINK_SIMILARITY = 0.42;
+  const SELECTED_MAX_NEIGHBORS = 260;
   const SELECTED_SPIRAL_ANGLE = Math.PI * (3 - Math.sqrt(5));
   const SELECTED_SPIRAL_PITCH = 2.6;
   const svgRef = useRef();
@@ -245,7 +246,8 @@ export const SimilarityGraph = ({
     const neighbors = similarPokemon
       .filter((p) => p.id !== selectedPokemon)
       .map((p) => byId.get(p.id))
-      .filter(Boolean);
+      .filter(Boolean)
+      .slice(0, SELECTED_MAX_NEIGHBORS);
 
     return [center, ...neighbors];
   }, [nodes, selectedPokemon, selectedNode, similarPokemon]);
