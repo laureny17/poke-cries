@@ -420,13 +420,12 @@ export const SimilarityGraph = ({
       const absoluteDissimilarity = 1 - similarity;
       const relativeDissimilarity = 1 - relativeSimilarity;
 
-      // Use both absolute and in-neighborhood dissimilarity so truly weak
-      // matches can peel off into their own outer bands instead of collapsing
-      // into one visually uniform ring.
+      // Keep distance mostly tied to the raw model score. A light relative
+      // term preserves readable rings without exaggerating tiny score gaps.
       return (
         touchingDistance +
-        Math.pow(absoluteDissimilarity, 2.15) * 280 +
-        Math.pow(relativeDissimilarity, 1.55) * 190
+        Math.pow(absoluteDissimilarity, 1.8) * 360 +
+        Math.pow(relativeDissimilarity, 1.45) * 70
       );
     },
     [
@@ -507,13 +506,7 @@ export const SimilarityGraph = ({
     const neighborOrder = focusedNodes
       .filter((node) => node.pokemon_id !== selectedPokemon)
       .slice()
-      .sort((a, b) => {
-        const similarityDelta = getSimilarityScore(b) - getSimilarityScore(a);
-        if (Math.abs(similarityDelta) > 1e-9) {
-          return similarityDelta;
-        }
-        return a.pokemon_id - b.pokemon_id;
-      });
+      .sort((a, b) => a.pokemon_id - b.pokemon_id);
 
     const neighborRank = new Map(
       neighborOrder.map((node, index) => [node.pokemon_id, index]),
