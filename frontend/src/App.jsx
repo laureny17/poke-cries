@@ -485,7 +485,7 @@ export default function App() {
         <Tutorial
           graphData={graphData}
           selectedPokemon={selectedPokemon}
-          tutorialStep={tutorialStep}
+          tutorialStep={showTutorial ? tutorialStep : null}
           onStepChange={setTutorialStep}
           onStarterChange={setTutorialSelectedStarter}
           onStarterReveal={playPokemonCry}
