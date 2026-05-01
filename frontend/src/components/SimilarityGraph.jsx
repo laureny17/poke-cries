@@ -507,7 +507,13 @@ export const SimilarityGraph = ({
     const neighborOrder = focusedNodes
       .filter((node) => node.pokemon_id !== selectedPokemon)
       .slice()
-      .sort((a, b) => a.pokemon_id - b.pokemon_id);
+      .sort((a, b) => {
+        const similarityDelta = getSimilarityScore(b) - getSimilarityScore(a);
+        if (Math.abs(similarityDelta) > 1e-9) {
+          return similarityDelta;
+        }
+        return a.pokemon_id - b.pokemon_id;
+      });
 
     const neighborRank = new Map(
       neighborOrder.map((node, index) => [node.pokemon_id, index]),
