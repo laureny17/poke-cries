@@ -4,7 +4,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
 import numpy as np
-from src.pokeapi_client import get_pokemon_data, get_pokemon_species
+from src.pokeapi_client import get_pokemon_data, get_pokemon_species, load_from_cache
 from src.data_store import DATA_FILE, load_similarity_data, save_similarity_data
 
 app = Flask(__name__)
@@ -60,6 +60,44 @@ def _calibrate_similarity_scores(scores: list[float]) -> dict[float, float]:
 def _matches_generation(gen_name: str, generation: int) -> bool:
     expected_roman = GENERATION_ROMAN.get(generation)
     return gen_name in {f"generation-{generation}", f"generation-{expected_roman}"}
+
+
+def _cry_urls_for_pokemon(pokemon_id: int) -> dict:
+    base_url = "https://raw.githubusercontent.com/PokeAPI/cries/main/cries/pokemon"
+    return {
+        "cry_url": f"{base_url}/latest/{pokemon_id}.ogg",
+        "cry_url_legacy": f"{base_url}/legacy/{pokemon_id}.ogg",
+        "cry_url_latest": f"{base_url}/latest/{pokemon_id}.ogg",
+    }
+
+
+def _details_from_cached_info(pokemon_id: int, info: dict) -> dict:
+    pokemon_cache = load_from_cache("pokemon", str(pokemon_id)) or {}
+    species_cache = load_from_cache("pokemon-species", str(pokemon_id)) or {}
+
+    habitat = species_cache.get("habitat", {}).get("name") if species_cache.get("habitat") else None
+    description = ""
+    for entry in species_cache.get("flavor_text_entries", []):
+        if entry.get("language", {}).get("name") == "en":
+            description = entry.get("flavor_text", "")
+            description = description.replace("\n", " ").replace("\f", " ").strip()
+            if description:
+                break
+
+    cries = pokemon_cache.get("cries", {})
+    cry_urls = _cry_urls_for_pokemon(pokemon_id)
+    cry_url_legacy = cries.get("legacy") or cry_urls["cry_url_legacy"]
+    cry_url_latest = cries.get("latest") or cry_urls["cry_url_latest"]
+
+    return {
+        **info,
+        "id": pokemon_id,
+        "habitat": habitat,
+        "description": description,
+        "cry_url": cry_url_latest or cry_url_legacy,
+        "cry_url_legacy": cry_url_legacy,
+        "cry_url_latest": cry_url_latest,
+    }
 
 # load similarity data into memory
 def load_data():
@@ -123,6 +161,8 @@ def get_pokemon(pokemon_id: int):
     info = None
     if similarity_data is not None:
         info = similarity_data.get("pokemon_info", {}).get(pokemon_id)
+    if info:
+        return jsonify(_details_from_cached_info(pokemon_id, info))
 
     # fall back to live fetch from pokeapi/cache if the local data is missing
     pokemon_data = get_pokemon_data(pokemon_id)

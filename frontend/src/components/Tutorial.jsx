@@ -16,6 +16,7 @@ export const Tutorial = ({
   tutorialStep: externalStep,
   onStepChange,
   onStarterChange,
+  onStarterReveal,
   onComplete,
   onSkip,
 }) => {
@@ -70,6 +71,9 @@ export const Tutorial = ({
         next.add(pokemonId);
         return next;
       });
+      if (onStarterReveal) {
+        onStarterReveal(pokemonId);
+      }
     }, 600);
   };
 

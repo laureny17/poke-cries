@@ -27,6 +27,7 @@ export default function App() {
   const [selectedGraphLoading, setSelectedGraphLoading] = useState(false);
   const [error, setError] = useState(null);
   const [pokemonDetailsById, setPokemonDetailsById] = useState({});
+  const pokemonDetailsRequestsRef = useRef({});
 
   // Intro & Tutorial state
   const [showIntro, setShowIntro] = useState(true);
@@ -68,6 +69,11 @@ export default function App() {
     setShowTutorial(false);
     setTutorialStep(1);
     setTutorialSelectedStarter(null);
+  }, []);
+
+  const handleSearchSelect = useCallback((pokemonId) => {
+    setFocusTarget((prev) => ({ id: pokemonId, seq: (prev?.seq ?? 0) + 1 }));
+    setSelectedPokemon(pokemonId);
   }, []);
 
   // Close settings panel on outside click
@@ -156,17 +162,29 @@ export default function App() {
   const ensurePokemonDetails = async (pokemonId) => {
     if (!pokemonId) return null;
     if (pokemonDetailsById[pokemonId]) return pokemonDetailsById[pokemonId];
-    try {
-      const details = await apiClient.getPokemonDetails(pokemonId);
-      setPokemonDetailsById((previous) => ({
-        ...previous,
-        [pokemonId]: details,
-      }));
-      return details;
-    } catch (err) {
-      console.error("Error fetching pokemon details:", err);
-      return null;
+    if (pokemonDetailsRequestsRef.current[pokemonId]) {
+      return pokemonDetailsRequestsRef.current[pokemonId];
     }
+
+    const request = apiClient
+      .getPokemonDetails(pokemonId)
+      .then((details) => {
+        setPokemonDetailsById((previous) => ({
+          ...previous,
+          [pokemonId]: details,
+        }));
+        return details;
+      })
+      .catch((err) => {
+        console.error("Error fetching pokemon details:", err);
+        return null;
+      })
+      .finally(() => {
+        delete pokemonDetailsRequestsRef.current[pokemonId];
+      });
+
+    pokemonDetailsRequestsRef.current[pokemonId] = request;
+    return request;
   };
 
   const playPokemonCry = async (pokemonId) => {
@@ -470,15 +488,14 @@ export default function App() {
           tutorialStep={tutorialStep}
           onStepChange={setTutorialStep}
           onStarterChange={setTutorialSelectedStarter}
+          onStarterReveal={playPokemonCry}
           onComplete={handleCompleteTutorial}
           onSkip={handleSkipTutorial}
         />
       )}
 
       {graphData && !showTutorial && !showIntro && (
-        <SearchBar nodes={graphData.nodes} onSelect={(id) => {
-          setFocusTarget((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }));
-        }} />
+        <SearchBar nodes={graphData.nodes} onSelect={handleSearchSelect} />
       )}
 
       {selectedPokemon && !showTutorial ? (

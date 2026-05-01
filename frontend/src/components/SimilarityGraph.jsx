@@ -1863,7 +1863,8 @@ export const SimilarityGraph = ({
   }, [tooltip, pokemonDetailsById]);
 
   useEffect(() => {
-    if (!focusTarget || selectedPokemon) return;
+    if (!focusTarget) return;
+    if (selectedPokemon && focusTarget.id !== selectedPokemon) return;
     const node = layoutNodesRef.current.find(
       (n) => n.pokemon_id === focusTarget.id,
     );
@@ -1873,7 +1874,7 @@ export const SimilarityGraph = ({
 
     const width = svgRef.current.clientWidth;
     const height = svgRef.current.clientHeight;
-    const scale = 3;
+    const scale = selectedPokemon ? 2.4 : 3;
     const target = d3.zoomIdentity
       .translate(width / 2, height / 2)
       .scale(scale)
