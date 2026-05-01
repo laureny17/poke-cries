@@ -27,6 +27,7 @@ export const SettingsPanel = forwardRef(
       filteredCount = 0,
       onToggleGeneration,
       onToggleType,
+      onResetFilters,
     },
     ref,
   ) => {
@@ -71,6 +72,13 @@ export const SettingsPanel = forwardRef(
       <div className="settings-panel" ref={ref}>
         <div className="settings-count-bar">
           {filteredCount} / {maxNodes} shown
+          <button
+            type="button"
+            className="settings-reset-btn"
+            onClick={onResetFilters}
+          >
+            RESET ALL
+          </button>
         </div>
 
         <div className="settings-section">
@@ -83,16 +91,12 @@ export const SettingsPanel = forwardRef(
               <div key={gen} className="settings-item-wrap">
                 <label
                   className={`settings-check-label${locked || overMax ? " settings-check-locked" : ""}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleGenClick(gen);
-                  }}
                 >
                   <input
                     type="checkbox"
                     checked={!excludedGenerations.has(gen)}
-                    disabled={locked || overMax}
-                    onChange={() => {}}
+                    disabled={locked}
+                    onChange={() => handleGenClick(gen)}
                   />
                   {GEN_LABELS[gen] || gen.toUpperCase()}
                 </label>
@@ -123,16 +127,12 @@ export const SettingsPanel = forwardRef(
                           ? `${TYPE_COLORS[type] || "#555"}88`
                           : TYPE_COLORS[type] || "#555",
                     }}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleTypeClick(type);
-                    }}
                   >
                     <input
                       type="checkbox"
                       checked={!excludedTypes.has(type)}
-                      disabled={locked || overMax}
-                      onChange={() => {}}
+                      disabled={locked}
+                      onChange={() => handleTypeClick(type)}
                     />
                     {type.toUpperCase()}
                   </label>

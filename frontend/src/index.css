@@ -367,12 +367,33 @@ code {
 }
 
 .settings-count-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 7px 14px 5px;
   font-family: "VT323", monospace;
   font-size: 14px;
   letter-spacing: 0.8px;
   color: #9999bb;
   border-bottom: 1px solid #e8eaf0;
+}
+
+.settings-reset-btn {
+  flex-shrink: 0;
+  padding: 1px 8px 2px;
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.8px;
+  color: #1a1a2e;
+  background: #f6f7fb;
+  border: 1px solid #d0d4e0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.settings-reset-btn:hover {
+  background: #eef1f8;
 }
 
 .settings-item-wrap {

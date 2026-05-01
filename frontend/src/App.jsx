@@ -17,6 +17,7 @@ import "./App.css";
 // Keeps the force simulation fast and the graph readable.
 const MAX_NODES = 400;
 const GRAPH_CACHE_KEY = "poke-cries:similarity-matrix:v12";
+const DEFAULT_GENERATION = "generation-i";
 
 export default function App() {
   const [selectedPokemon, setSelectedPokemon] = useState(null);
@@ -76,6 +77,12 @@ export default function App() {
     setFocusTarget((prev) => ({ id: pokemonId, seq: (prev?.seq ?? 0) + 1 }));
   }, []);
 
+  const getDefaultExcludedGenerations = useCallback((nodes = []) => {
+    const allGens = new Set(nodes.map((n) => n.generation).filter(Boolean));
+    allGens.delete(DEFAULT_GENERATION);
+    return allGens;
+  }, []);
+
   const handlePokemonSelect = useCallback((pokemonId) => {
     if (pokemonId === selectedPokemon) {
       return;
@@ -106,12 +113,13 @@ export default function App() {
   // On first data load, default to showing Gen I only.
   useEffect(() => {
     if (!graphData) return;
-    const allGens = new Set(
-      graphData.nodes.map((n) => n.generation).filter(Boolean),
-    );
-    allGens.delete("generation-i");
-    setExcludedGenerations(allGens);
-  }, [graphData]); // graphData only transitions once: null → loaded
+    setExcludedGenerations(getDefaultExcludedGenerations(graphData.nodes));
+  }, [graphData, getDefaultExcludedGenerations]); // graphData only transitions once: null → loaded
+
+  const resetFilters = useCallback(() => {
+    setExcludedGenerations(getDefaultExcludedGenerations(graphData?.nodes));
+    setExcludedTypes(new Set());
+  }, [getDefaultExcludedGenerations, graphData]);
 
   const toggleGeneration = useCallback(
     (gen, filteredNodes, excludedTypes) => {
@@ -587,6 +595,7 @@ export default function App() {
           onToggleType={(type) =>
             toggleType(type, filteredNodes, excludedGenerations)
           }
+          onResetFilters={resetFilters}
         />
       )}
 

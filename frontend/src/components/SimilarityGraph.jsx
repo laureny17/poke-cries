@@ -573,7 +573,7 @@ export const SimilarityGraph = ({
     let layoutNodes = baseLayoutNodes;
     let overviewClusterPairStrengths = new Map();
 
-    if (selectedPokemon) {
+    if (selectedPokemon && !focusTarget) {
       layoutNodes = baseLayoutNodes.map((node) => {
         if (node.pokemon_id === selectedPokemon) {
           return {
@@ -1821,7 +1821,7 @@ export const SimilarityGraph = ({
             .translate(-centerX, -centerY),
         );
       }
-    } else {
+    } else if (!selectedPokemon) {
       selectedAutoFitKeyRef.current = null;
     }
 
@@ -1964,7 +1964,7 @@ export const SimilarityGraph = ({
         .attr("opacity", 0)
         .remove();
     }
-  }, [focusTarget, selectedPokemon]);
+  }, [focusTarget, selectedPokemon, focusedNodes]);
 
   return (
     <div className="graph-root" ref={wrapperRef}>
