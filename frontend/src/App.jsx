@@ -76,6 +76,11 @@ export default function App() {
     setSelectedPokemon(pokemonId);
   }, []);
 
+  const handlePokemonSelect = useCallback((pokemonId) => {
+    setSimilarPokemon([]);
+    setSelectedPokemon(pokemonId);
+  }, []);
+
   // Close settings panel on outside click
   useEffect(() => {
     if (!settingsOpen) return undefined;
@@ -544,7 +549,7 @@ export default function App() {
           nodes={visibleClusterNodes}
           links={filteredLinks}
           selectedPokemon={selectedPokemon}
-          onPokemonSelect={setSelectedPokemon}
+          onPokemonSelect={handlePokemonSelect}
           onPokemonClick={playPokemonCry}
           onPokemonHover={ensurePokemonDetails}
           focusTarget={focusTarget}

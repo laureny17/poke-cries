@@ -227,8 +227,12 @@ export const SimilarityGraph = ({
   );
 
   const focusedNodes = useMemo(() => {
-    if (!selectedPokemon || !selectedNode || similarPokemon.length === 0) {
+    if (!selectedPokemon || !selectedNode) {
       return nodes.slice(0, 400);
+    }
+
+    if (similarPokemon.length === 0) {
+      return [selectedNode];
     }
 
     const byId = new Map(nodes.map((node) => [node.pokemon_id, node]));
@@ -1775,6 +1779,7 @@ export const SimilarityGraph = ({
     zoomRef.current = zoom;
     layoutNodesRef.current = layoutNodes;
     svg.call(zoom);
+    svg.on("dblclick.zoom", null);
     if (selectedPokemon) {
       const centerRadius = getNodeRadius({ pokemon_id: selectedPokemon });
       const nonCenterNodes = layoutNodes.filter(
