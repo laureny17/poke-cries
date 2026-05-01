@@ -283,7 +283,13 @@ export default function App() {
           0.0,
         );
         if (isCancelled) return;
-        setSimilarPokemon(data);
+        setSimilarPokemon(
+          data.map((pokemon) => ({
+            ...pokemon,
+            calibrated_similarity: pokemon.similarity,
+            similarity: pokemon.raw_similarity ?? pokemon.similarity,
+          })),
+        );
       } catch (err) {
         console.error("Error loading similar pokemon:", err);
       } finally {
