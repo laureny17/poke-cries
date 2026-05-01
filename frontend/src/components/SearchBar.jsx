@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 
-export const SearchBar = ({ nodes, onSelect }) => {
+export const SearchBar = ({ nodes, onSelect, resetKey }) => {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const ref = useRef();
@@ -29,6 +29,11 @@ export const SearchBar = ({ nodes, onSelect }) => {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  useEffect(() => {
+    setQuery('');
+    setOpen(false);
+  }, [resetKey]);
 
   return (
     <div className="search-root" ref={ref}>

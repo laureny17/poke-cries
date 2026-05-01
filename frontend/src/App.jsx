@@ -81,6 +81,10 @@ export default function App() {
     setSelectedPokemon(pokemonId);
   }, []);
 
+  useEffect(() => {
+    setFocusTarget(null);
+  }, [selectedPokemon]);
+
   // Close settings panel on outside click
   useEffect(() => {
     if (!settingsOpen) return undefined;
@@ -531,7 +535,11 @@ export default function App() {
       )}
 
       {graphData && !showTutorial && !showIntro && (
-        <SearchBar nodes={graphData.nodes} onSelect={handleSearchSelect} />
+        <SearchBar
+          nodes={filteredNodes}
+          onSelect={handleSearchSelect}
+          resetKey={selectedPokemon || "overview"}
+        />
       )}
 
       {selectedPokemon && !showTutorial ? (
