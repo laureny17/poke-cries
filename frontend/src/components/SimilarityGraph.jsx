@@ -1244,6 +1244,10 @@ export const SimilarityGraph = ({
         return;
       }
       if (!onPokemonClick) return;
+      if (selectedPokemon && d.pokemon_id === selectedPokemon) {
+        onPokemonClick(d.pokemon_id);
+        return;
+      }
       if (clickTimeoutRef.current) {
         clearTimeout(clickTimeoutRef.current);
       }

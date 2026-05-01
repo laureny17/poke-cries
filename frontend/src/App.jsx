@@ -77,9 +77,12 @@ export default function App() {
   }, []);
 
   const handlePokemonSelect = useCallback((pokemonId) => {
+    if (pokemonId === selectedPokemon) {
+      return;
+    }
     setSimilarPokemon([]);
     setSelectedPokemon(pokemonId);
-  }, []);
+  }, [selectedPokemon]);
 
   useEffect(() => {
     setFocusTarget(null);
