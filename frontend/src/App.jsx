@@ -74,7 +74,6 @@ export default function App() {
 
   const handleSearchSelect = useCallback((pokemonId) => {
     setFocusTarget((prev) => ({ id: pokemonId, seq: (prev?.seq ?? 0) + 1 }));
-    setSelectedPokemon(pokemonId);
   }, []);
 
   const handlePokemonSelect = useCallback((pokemonId) => {

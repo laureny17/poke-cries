@@ -1883,7 +1883,6 @@ export const SimilarityGraph = ({
 
   useEffect(() => {
     if (!focusTarget) return;
-    if (selectedPokemon && focusTarget.id !== selectedPokemon) return;
     const node = layoutNodesRef.current.find(
       (n) => n.pokemon_id === focusTarget.id,
     );
