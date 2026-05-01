@@ -72,12 +72,14 @@ export const SettingsPanel = forwardRef(
       <div className="settings-panel" ref={ref}>
         <div className="settings-count-bar">
           {filteredCount} / {maxNodes} shown
+        </div>
+        <div className="settings-reset-row">
           <button
             type="button"
             className="settings-reset-btn"
             onClick={onResetFilters}
           >
-            RESET ALL
+            RESET FILTERS
           </button>
         </div>
 
