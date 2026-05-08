@@ -249,14 +249,12 @@ code {
 
 .search-dropdown {
   position: absolute;
-  top: calc(100% - 2px);
+  top: calc(100% + 8px);
   left: 0;
   width: 280px;
-  background: #ffffff;
+  background: #f8f8fc;
   border: 2px solid #d0d4e0;
-  border-top: none;
-  border-radius: 0 0 4px 4px;
-  box-shadow: 4px 4px 0 #d0d4e0;
+  border-radius: 4px;
   z-index: 31;
 }
 
@@ -341,7 +339,7 @@ code {
 /* ── Settings panel ──────────────────────────────────────────────────────── */
 .settings-panel {
   position: absolute;
-  top: 54px;
+  top: 70px;
   right: 14px;
   z-index: 29;
   width: 240px;
@@ -350,7 +348,6 @@ code {
   background: #ffffff;
   border: 2px solid #d0d4e0;
   border-radius: 4px;
-  box-shadow: 4px 4px 0 #d0d4e0;
 }
 
 .settings-section {
