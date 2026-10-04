@@ -15,6 +15,7 @@ import {
   SpriteProgressPill,
 } from "./components/LoadingProgress";
 import { apiClient } from "./api/client";
+import { getCryUrl, playCry, prefetchCry } from "./cryPlayer";
 import "./App.css";
 
 // Max Pokémon shown in the overview graph at once.
@@ -25,6 +26,10 @@ const DEFAULT_GENERATION = "generation-i";
 // Render's free tier sleeps when idle; if the server hasn't answered by now it's
 // most likely waking up, so tell the user instead of showing bare dots.
 const SERVER_WAKE_HINT_MS = 2500;
+// Only prefetch a hovered pokemon's cry once the pointer settles on it, so
+// sweeping across the graph doesn't download dozens of cries.
+const CRY_HOVER_PREFETCH_DELAY_MS = 120;
+const TUTORIAL_STARTER_IDS = [1, 4, 7];
 // Don't hold the graph back forever if a few sprites are slow or missing.
 const SPRITE_PRELOAD_TIMEOUT_MS = 10000;
 
@@ -118,7 +123,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [pokemonDetailsById, setPokemonDetailsById] = useState({});
   const pokemonDetailsRequestsRef = useRef({});
-  const activeCryRef = useRef(null);
+  const hoverPrefetchTimerRef = useRef(null);
 
   // Intro & Tutorial state
   const [showIntro, setShowIntro] = useState(true);
@@ -143,6 +148,8 @@ export default function App() {
   }, []);
 
   const handleStartTutorial = useCallback(() => {
+    // the tutorial plays a starter's cry when its pokeball opens
+    TUTORIAL_STARTER_IDS.forEach((id) => prefetchCry(getCryUrl(id)));
     setShowIntro(false);
     setShowTutorial(true);
     setTutorialStep(1);
@@ -297,44 +304,36 @@ export default function App() {
     return request;
   };
 
+  // The cry url is predictable, so playback never waits on the API; details
+  // are still fetched in the background for the tooltip.
+  const cryUrlFor = (pokemonId) =>
+    getCryUrl(pokemonId, pokemonDetailsById[pokemonId]);
+
   const playPokemonCry = async (pokemonId) => {
-    const details = await ensurePokemonDetails(pokemonId);
-    const cryUrl =
-      // for pikachu, use the legacy cry which is better for comparison
-      pokemonId === 25
-        ? details?.cry_url_legacy || details?.cry_url
-        : details?.cry_url || details?.cry_url_legacy;
-    if (!cryUrl) return;
-    // Dropping src and calling load() lets the browser free the decoded audio
-    // right away instead of keeping it alive until garbage collection.
-    const releaseAudio = (audio) => {
-      audio.pause();
-      audio.removeAttribute("src");
-      audio.load();
-    };
+    ensurePokemonDetails(pokemonId);
     try {
-      if (activeCryRef.current) {
-        releaseAudio(activeCryRef.current);
-        activeCryRef.current = null;
-      }
-      const audio = new Audio(cryUrl);
-      activeCryRef.current = audio;
-      audio.volume = 0.75;
-      audio.addEventListener(
-        "ended",
-        () => {
-          if (activeCryRef.current === audio) {
-            activeCryRef.current = null;
-          }
-          releaseAudio(audio);
-        },
-        { once: true },
-      );
-      await audio.play();
+      await playCry(cryUrlFor(pokemonId));
     } catch (err) {
       console.error("Error playing cry audio:", err);
     }
   };
+
+  // Start downloading/decoding the moment a press begins, so the sound is
+  // ready by the time the click (single vs double) is resolved.
+  const prefetchPokemonCry = (pokemonId) => {
+    prefetchCry(cryUrlFor(pokemonId));
+  };
+
+  const handlePokemonHover = (pokemonId) => {
+    ensurePokemonDetails(pokemonId);
+    clearTimeout(hoverPrefetchTimerRef.current);
+    hoverPrefetchTimerRef.current = setTimeout(
+      () => prefetchPokemonCry(pokemonId),
+      CRY_HOVER_PREFETCH_DELAY_MS,
+    );
+  };
+
+  useEffect(() => () => clearTimeout(hoverPrefetchTimerRef.current), []);
 
   // Load the broad similarity matrix once on mount
   useEffect(() => {
@@ -400,6 +399,8 @@ export default function App() {
       }
 
       setSelectedGraphLoading(true);
+      // the center pokemon is the one most likely to be clicked next
+      prefetchCry(getCryUrl(selectedPokemon));
       const selectedName = graphData.nodes.find(
         (node) => node.pokemon_id === selectedPokemon,
       )?.name;
@@ -743,7 +744,8 @@ export default function App() {
           selectedPokemon={selectedPokemon}
           onPokemonSelect={handlePokemonSelect}
           onPokemonClick={playPokemonCry}
-          onPokemonHover={ensurePokemonDetails}
+          onPokemonHover={handlePokemonHover}
+          onPokemonPress={prefetchPokemonCry}
           focusTarget={focusTarget}
           similarPokemon={similarPokemon}
           similarityById={similarityById}

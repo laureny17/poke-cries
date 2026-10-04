@@ -124,6 +124,7 @@ export const SimilarityGraph = ({
   onPokemonSelect,
   onPokemonClick,
   onPokemonHover,
+  onPokemonPress = null,
   focusTarget = null,
   similarPokemon = [],
   similarityById = {},
@@ -1266,6 +1267,10 @@ export const SimilarityGraph = ({
 
     node.on("mouseleave", () => {
       setTooltip(null);
+    });
+
+    node.on("pointerdown", (event, d) => {
+      onPokemonPress?.(d.pokemon_id);
     });
 
     node.on("click", (event, d) => {
