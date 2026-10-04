@@ -217,19 +217,31 @@ export default function App() {
         ? details?.cry_url_legacy || details?.cry_url
         : details?.cry_url || details?.cry_url_legacy;
     if (!cryUrl) return;
+    // Dropping src and calling load() lets the browser free the decoded audio
+    // right away instead of keeping it alive until garbage collection.
+    const releaseAudio = (audio) => {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    };
     try {
       if (activeCryRef.current) {
-        activeCryRef.current.pause();
-        activeCryRef.current.currentTime = 0;
+        releaseAudio(activeCryRef.current);
+        activeCryRef.current = null;
       }
       const audio = new Audio(cryUrl);
       activeCryRef.current = audio;
       audio.volume = 0.75;
-      audio.addEventListener("ended", () => {
-        if (activeCryRef.current === audio) {
-          activeCryRef.current = null;
-        }
-      });
+      audio.addEventListener(
+        "ended",
+        () => {
+          if (activeCryRef.current === audio) {
+            activeCryRef.current = null;
+          }
+          releaseAudio(audio);
+        },
+        { once: true },
+      );
       await audio.play();
     } catch (err) {
       console.error("Error playing cry audio:", err);

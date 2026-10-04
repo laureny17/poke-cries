@@ -44,13 +44,14 @@ poke-cries/
 │   │   ├── audio_processor.py     # Perceptual feature extraction
 │   │   ├── similarity.py          # Weighted similarity + overview clustering/layout
 │   │   ├── data_pipeline.py       # Download → extract → similarity orchestration
-│   │   ├── data_store.py          # Lightweight load/save for the cached similarity_data.json
+│   │   ├── data_store.py          # Lightweight load/save for the cached similarity data
 │   │   └── neural_audio.py        # Optional CLAP embedding pipeline
 │   ├── data/
 │   │   ├── cries/                 # Downloaded audio files
 │   │   ├── vectors/                # Cached feature vectors
 │   │   ├── cache/                 # PokéAPI response cache
-│   │   └── similarity_data.json   # Built similarity matrix (served to the frontend)
+│   │   ├── similarity_data.json   # Built similarity matrix (source of truth)
+│   │   └── similarity_runtime.npz # Compact copy the server loads (auto-regenerated)
 │   ├── app.py                     # Flask application
 │   ├── requirements.txt
 │   └── requirements-neural.txt    # Extra deps for the CLAP pipeline

@@ -77,6 +77,8 @@ Cache location: `backend/data/cache/{endpoint}_{identifier}.json`.
 
 A trimmed copy of the same save/load logic that deliberately avoids importing `librosa`/`scikit-learn`, so `app.py` can start and serve cached data without pulling in the heavy ML stack. `app.py` imports from here, not from `data_pipeline.py`, for its hot path.
 
+The server never parses `similarity_data.json` directly (that costs ~280 MB as Python dicts). Instead it loads `similarity_runtime.npz`: the same numbers as a dense float64 `(n, n)` similarity matrix plus a vector matrix, ~15 MB in memory. Both save functions regenerate it, and `load_similarity_data()` rebuilds it in a short-lived subprocess if its stored hash doesn't match the JSON. To regenerate by hand: `cd backend && python -m src.data_store`.
+
 ### `neural_audio.py` — optional CLAP embedding pipeline
 
 An alternative to hand-built DSP features: runs Pokémon cries through `laion/clap-htsat-unfused` (HuggingFace CLAP) to get learned audio embeddings, then reuses the same `compute_pairwise_similarities` / `compute_overview_layout` machinery. Requires `backend/requirements-neural.txt` (torch, transformers, umap-learn, hdbscan) and is invoked via `manage.py build-clap`.
@@ -97,8 +99,9 @@ POST /api/admin/build-matrix   { generation, force }
 
 Notable behavior:
 
-- `similarity_data` is loaded once into memory on first request (`load_data()`), backed by `data_store.py`.
-- `/api/similarity/<id>` calibrates raw similarity scores per-neighborhood with a z-score + sigmoid (`_calibrate_similarity_scores`) so tightly clustered cosine scores spread out into a more visually useful range before the `min_similarity` cutoff is applied.
+- `similarity_data` is loaded once into memory at worker start (`load_data()`), backed by `data_store.py`. Request handlers only use numpy on the in-memory matrix; nothing on the hot path imports `src.similarity` / `src.data_pipeline`.
+- JSON responses over 1 KB are gzipped when the client accepts it (the overview payload goes from ~1.2 MB to ~250 KB).
+- `/api/similarity/<id>` calibrates raw similarity scores per-neighborhood with a z-score + sigmoid (`_make_score_calibrator`) so tightly clustered cosine scores spread out into a more visually useful range before the `min_similarity` cutoff is applied.
 - `/api/similarity-matrix` caps each node's `nearest_neighbors` list to 16, and computes a fresh overview layout on the fly when a `generation` filter is applied (since the cached layout is for the full dataset).
 - CORS origins are configurable via the `CORS_ORIGINS` env var, defaulting to common local dev ports plus the deployed Render URL.
 
@@ -155,7 +158,7 @@ Axios wrapper around all backend routes (`getPokemonList`, `getPokemonDetails`, 
 ```
 App.jsx mounts
   → apiClient.getSimilarityMatrix(null, 0.15, false)
-  → Backend loads similarity_data.json into memory (once)
+  → Backend serves it from the similarity matrix already in memory
   → Returns nodes with overview_x/y, cluster_id, nearest_neighbors
   → excludedGenerations defaults to "everything except Gen I"
   → IntroScreen shown
@@ -173,7 +176,7 @@ SimilarityGraph → onPokemonSelect(25) → App: setSelectedPokemon(25)
 
 ## Deployment
 
-`render.yaml` deploys the Flask backend to Render as a Python web service (`gunicorn app:app --workers 1 --threads 2 --timeout 120`, `rootDir: backend`). The frontend is a separate static build (`REACT_APP_API_URL` pointed at the deployed backend).
+`render.yaml` deploys the Flask backend to Render as a Python web service (`gunicorn app:app --workers 1 --threads 2 --timeout 120 --max-requests 1000 --max-requests-jitter 100`, `rootDir: backend`, `MALLOC_ARENA_MAX=2`). The frontend is a separate static build (`REACT_APP_API_URL` pointed at the deployed backend).
 
 ## Caching Strategy
 
@@ -181,7 +184,8 @@ SimilarityGraph → onPokemonSelect(25) → App: setSelectedPokemon(25)
 1. PokéAPI response cache    backend/data/cache/       permanent, manual clear
 2. Downloaded cry audio      backend/data/cries/       .ogg, versioned by CRY_SOURCE_VERSION
 3. Extracted feature vectors backend/data/vectors/     .npy, versioned by FEATURE_VERSION
-4. Similarity matrix         backend/data/similarity_data.json   loaded into memory on first request
+4. Similarity matrix         backend/data/similarity_data.json   source of truth written by the build
+5. Runtime matrix            backend/data/similarity_runtime.npz compact copy the server loads, keyed by the JSON's sha256
 ```
 
 ## Dependencies

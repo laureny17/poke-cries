@@ -2,7 +2,9 @@
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+import gzip
 import os
+import threading
 import numpy as np
 from src.pokeapi_client import get_pokemon_data, get_pokemon_species, load_from_cache
 from src.data_store import DATA_FILE, load_similarity_data, save_similarity_data
@@ -21,6 +23,7 @@ CORS(
 
 # global state for cached similarity data (keeps the app less comutationally intensive)
 similarity_data = None
+_load_lock = threading.Lock()
 GENERATION_ROMAN = {
     1: "i",
     2: "ii",
@@ -35,26 +38,41 @@ GENERATION_ROMAN = {
 
 
 # spread tightly-clustered cosine scores into a range that is more visually useful for our visualization
-def _calibrate_similarity_scores(scores: list[float]) -> dict[float, float]:
-    if not scores:
-        return {}
+def _make_score_calibrator(all_scores: np.ndarray):
+    if all_scores.size == 0:
+        return lambda score: score
 
-    arr = np.array(scores, dtype=float)
-    mean = float(np.mean(arr))
-    std = float(np.std(arr))
+    mean = float(np.mean(all_scores))
+    std = float(np.std(all_scores))
 
     # handle the degenerate case where all similarities are basically the same
     if std < 1e-8:
-        return {score: 0.5 for score in scores}
+        return lambda score: 0.5
 
-    scaled = {}
-    for score in scores:
+    def calibrate(score: float) -> float:
         z = (score - mean) / (std * 1.5)
         # sigmoid maps to (0, 1) and makes tiny gaps around the mean easier to see
-        calibrated = 1.0 / (1.0 + np.exp(-z))
-        scaled[score] = float(calibrated)
+        return float(1.0 / (1.0 + np.exp(-z)))
 
-    return scaled
+    return calibrate
+
+
+def _compute_distance(similarity: float) -> float:
+    # same as src.similarity.compute_distance, inlined so request handlers don't
+    # import the audio/ml stack (librosa, scipy, sklearn) into the web process
+    similarity = max(0.0, min(1.0, similarity))
+    return 1.0 / (1.0 + (10.0 * similarity))
+
+
+def _sorted_desc(scores: np.ndarray) -> np.ndarray:
+    # stable descending sort; NaN (no score for that pair) sorts last
+    keys = np.where(np.isnan(scores), np.inf, -scores)
+    return np.argsort(keys, kind="stable", axis=-1)
+
+
+def _submatrix(pids: list[int]) -> np.ndarray:
+    indices = [similarity_data["index_by_id"][pid] for pid in pids]
+    return similarity_data["similarity_matrix"][np.ix_(indices, indices)]
 
 
 def _matches_generation(gen_name: str, generation: int) -> bool:
@@ -102,8 +120,35 @@ def _details_from_cached_info(pokemon_id: int, info: dict) -> dict:
 # load similarity data into memory
 def load_data():
     global similarity_data
-    if similarity_data is None and DATA_FILE.exists():
-        similarity_data = load_similarity_data(DATA_FILE)
+    if similarity_data is not None or not DATA_FILE.exists():
+        return
+    # gunicorn runs several threads; make sure only one of them loads the data
+    with _load_lock:
+        if similarity_data is None:
+            similarity_data = load_similarity_data(DATA_FILE)
+
+
+@app.after_request
+def _gzip_response(response):
+    # the overview payload is ~1.2 MB of json; gzip shrinks it ~6x, which means
+    # faster loads and less time holding the response in memory
+    if (
+        response.status_code != 200
+        or response.direct_passthrough
+        or response.mimetype != "application/json"
+        or "Content-Encoding" in response.headers
+        or "gzip" not in request.headers.get("Accept-Encoding", "").lower()
+    ):
+        return response
+
+    payload = response.get_data()
+    if len(payload) < 1024:
+        return response
+
+    response.set_data(gzip.compress(payload, compresslevel=6))
+    response.headers["Content-Encoding"] = "gzip"
+    response.vary.add("Accept-Encoding")
+    return response
 
 
 # health check
@@ -219,33 +264,32 @@ def get_similarity_neighbors(pokemon_id: int):
     if similarity_data is None:
         return jsonify({"error": "No similarity data loaded"}), 503
 
-    if pokemon_id not in similarity_data["pokemon_info"]:
+    if (
+        pokemon_id not in similarity_data["pokemon_info"]
+        or pokemon_id not in similarity_data["index_by_id"]
+    ):
         return jsonify({"error": "Pokémon not found"}), 404
-
-    from src.similarity import compute_distance, get_similar_pokemon
 
     top_k = request.args.get("top_k", type=int, default=20)
     min_similarity = request.args.get("min_similarity", type=float, default=0.5)
 
-    similar = get_similar_pokemon(
-        pokemon_id,
-        similarity_data["similarities"],
-        top_k=top_k,
-        min_similarity=0.0,
-    )
+    ids = similarity_data["ids"]
+    row_index = similarity_data["index_by_id"][pokemon_id]
+    row = similarity_data["similarity_matrix"][row_index].copy()
+    row[row_index] = np.nan  # never list a pokemon as its own neighbor
+    has_score = ~np.isnan(row)
 
-    # build a calibration map from all available neighbors for this pokemon
+    # build a calibration from all available neighbors for this pokemon
     # so we can spread out the scores more evenly for visualization purposes
-    all_neighbor_scores = [
-        score
-        for (pid1, pid2), score in similarity_data["similarities"].items()
-        if pid1 == pokemon_id and pid2 != pokemon_id
-    ]
-    calibration_map = _calibrate_similarity_scores(all_neighbor_scores)
+    calibrate = _make_score_calibrator(row[has_score])
+
+    row[has_score & (row < 0.0)] = np.nan
+    order = _sorted_desc(row)[: max(0, min(top_k, int(np.count_nonzero(row >= 0.0))))]
+    similar = [(ids[index], float(row[index])) for index in order]
 
     result = []
     for neighbor_id, score in similar:
-        calibrated_score = calibration_map.get(score, score)
+        calibrated_score = calibrate(score)
         if calibrated_score < min_similarity:
             continue
 
@@ -255,7 +299,7 @@ def get_similarity_neighbors(pokemon_id: int):
                 "id": neighbor_id,
                 "similarity": float(calibrated_score),
                 "raw_similarity": float(score),
-                "distance": compute_distance(calibrated_score),
+                "distance": _compute_distance(calibrated_score),
                 **info,
             })
 
@@ -295,33 +339,52 @@ def get_similarity_matrix():
                 continue
         filtered_pokemon[pid] = info
 
+    # pokemon that have a row in the similarity matrix, in ascending id order
+    matrix_pids = sorted(
+        pid for pid in filtered_pokemon if pid in similarity_data["index_by_id"]
+    )
+    sub = _submatrix(matrix_pids)
+
     if generation:
+        # heavy import (sklearn etc.), only needed for per-generation layouts
         from src.similarity import compute_overview_layout
 
+        sub_similarities = {
+            (pid1, pid2): float(sub[i, j])
+            for i, pid1 in enumerate(matrix_pids)
+            for j, pid2 in enumerate(matrix_pids)
+            if not np.isnan(sub[i, j])
+        }
+        vector_matrix = similarity_data["vector_matrix"]
+        vectors = {
+            pid: vector_matrix[index]
+            for index, pid in enumerate(similarity_data["vector_ids"])
+        }
         overview_layout = compute_overview_layout(
             list(filtered_pokemon.keys()),
-            similarity_data.get("similarities", {}),
-            similarity_data.get("vectors", {}),
+            sub_similarities,
+            vectors,
         )
+        del sub_similarities
     else:
         overview_layout = similarity_data.get("overview_layout", {})
 
     nearest_neighbors_by_pid = {pid: [] for pid in filtered_pokemon}
-    for (source_id, neighbor_id), score in similarity_data["similarities"].items():
-        if (
-            source_id == neighbor_id
-            or source_id not in filtered_pokemon
-            or neighbor_id not in filtered_pokemon
-        ):
-            continue
-        nearest_neighbors_by_pid[source_id].append({
-            "pokemon_id": neighbor_id,
-            "similarity": float(score),
-        })
-
-    for neighbors in nearest_neighbors_by_pid.values():
-        neighbors.sort(key=lambda neighbor: neighbor["similarity"], reverse=True)
-        del neighbors[16:]
+    if matrix_pids:
+        neighbor_scores = sub.copy()
+        np.fill_diagonal(neighbor_scores, np.nan)
+        top_neighbors = _sorted_desc(neighbor_scores)[:, :16]
+        for row_index, source_id in enumerate(matrix_pids):
+            row = neighbor_scores[row_index]
+            nearest_neighbors_by_pid[source_id] = [
+                {
+                    "pokemon_id": matrix_pids[col],
+                    "similarity": float(row[col]),
+                }
+                for col in top_neighbors[row_index]
+                if not np.isnan(row[col])
+            ]
+        del neighbor_scores, top_neighbors
 
     # build nodes for the frontend graph view
     nodes = []
@@ -342,24 +405,20 @@ def get_similarity_matrix():
         })
 
     links = []
-    if include_links:
-        from src.similarity import compute_distance
-
-        # only keep edges that clear the similarity threshold
-        for (pid1, pid2), score in similarity_data["similarities"].items():
-            if score < min_similarity:
-                continue
-
-            if pid1 not in pid_to_idx or pid2 not in pid_to_idx:
-                continue
-
-            if pid1 < pid2:  # avoid duplicates
-                links.append({
-                    "source": pid_to_idx[pid1],
-                    "target": pid_to_idx[pid2],
-                    "similarity": float(score),
-                    "distance": compute_distance(score),
-                })
+    if include_links and matrix_pids:
+        # only keep edges that clear the similarity threshold; upper triangle
+        # (pid1 < pid2) avoids duplicates
+        rows, cols = np.triu_indices(len(matrix_pids), k=1)
+        scores = sub[rows, cols]
+        keep = ~np.isnan(scores) & (scores >= min_similarity)
+        for i, j, score in zip(rows[keep], cols[keep], scores[keep]):
+            score = float(score)
+            links.append({
+                "source": pid_to_idx[matrix_pids[i]],
+                "target": pid_to_idx[matrix_pids[j]],
+                "similarity": score,
+                "distance": _compute_distance(score),
+            })
 
     return jsonify({
         "nodes": nodes,
@@ -371,7 +430,19 @@ def get_similarity_matrix():
 @app.route("/generations", methods=["GET"])
 @app.route("/api/generations", methods=["GET"])
 def get_generations():
-    from src.data_pipeline import get_generation_pokemon
+    load_data()
+
+    if similarity_data is not None:
+        # count from the loaded data instead of calling pokeapi and importing
+        # the audio pipeline on every request
+        def get_generation_pokemon(gen_id: int) -> list[int]:
+            return [
+                pid
+                for pid, info in similarity_data["pokemon_info"].items()
+                if _matches_generation(info.get("generation", ""), gen_id)
+            ]
+    else:
+        from src.data_pipeline import get_generation_pokemon
 
     generations = []
     for gen_id in range(1, 10):
@@ -414,17 +485,24 @@ def build_similarity_matrix_endpoint():
 
         data = build_similarity_matrix(pokemon_ids)
         save_similarity_data(data, DATA_FILE)
+        pokemon_count = len(data["pokemon_info"])
+        del data
 
         # reload into memory so the next request sees the fresh matrix
         global similarity_data
-        similarity_data = data
+        with _load_lock:
+            similarity_data = load_similarity_data(DATA_FILE)
 
         return jsonify({
             "success": True,
-            "pokemon_count": len(data["pokemon_info"]),
+            "pokemon_count": pokemon_count,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# load at worker start so the first visitor doesn't wait on it
+load_data()
 
 
 if __name__ == "__main__":
