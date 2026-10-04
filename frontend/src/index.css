@@ -109,6 +109,43 @@ code {
   transition: transform 0.15s steps(4, end);
 }
 
+.loading-progress-bar-small {
+  width: 120px;
+  height: 12px;
+  box-shadow: 2px 2px 0 #d0d4e0;
+}
+
+.sprite-progress-pill {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 4px;
+  border: 2px solid #d0d4e0;
+  background: #f8f8fc;
+  color: #666880;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* the graph hint spans most of the width on small screens; sit above it */
+@media (max-width: 900px) {
+  .sprite-progress-pill {
+    bottom: calc(max(14px, env(safe-area-inset-bottom)) + 64px);
+  }
+}
+
+@media (max-width: 520px) {
+  .sprite-progress-pill {
+    bottom: calc(max(14px, env(safe-area-inset-bottom)) + 92px);
+  }
+}
+
 .loading-dots {
   display: inline-flex;
   width: 28px;
