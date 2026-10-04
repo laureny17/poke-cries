@@ -1,7 +1,10 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { LoadingText } from "./LoadingText";
 
 const formatKilobytes = (bytes) => `${Math.round(bytes / 1024)} KB`;
+// Cached sprites settle almost instantly; only show the pill when loading is
+// actually noticeable so it doesn't flash on every graph rebuild.
+const SPRITE_PILL_DELAY_MS = 400;
 
 const describe = (progress) => {
   switch (progress?.stage) {
@@ -12,15 +15,16 @@ const describe = (progress) => {
       };
     case "downloading": {
       const { loaded = 0, total = 0 } = progress;
+      const label = progress.label || "Loading cry data";
       if (total > 0) {
         const percent = Math.min(100, Math.round((loaded / total) * 100));
         return {
-          label: "Loading cry data",
+          label,
           detail: `${percent}%`,
           fraction: Math.min(1, loaded / total),
         };
       }
-      return { label: "Loading cry data", detail: formatKilobytes(loaded) };
+      return { label, detail: formatKilobytes(loaded) };
     }
     case "sprites": {
       const { loaded = 0, total = 0 } = progress;
@@ -31,9 +35,21 @@ const describe = (progress) => {
       };
     }
     default:
-      return { label: "Connecting" };
+      return { label: progress?.label || "Connecting" };
   }
 };
+
+const ProgressBar = ({ fraction, className = "" }) => (
+  <div
+    className={`loading-progress-bar ${className}`}
+    style={{ visibility: fraction === undefined ? "hidden" : "visible" }}
+  >
+    <div
+      className="loading-progress-fill"
+      style={{ transform: `scaleX(${fraction || 0})` }}
+    />
+  </div>
+);
 
 export const LoadingProgress = ({ progress }) => {
   const { label, detail, fraction } = describe(progress);
@@ -43,15 +59,36 @@ export const LoadingProgress = ({ progress }) => {
         <LoadingText label={label} />
       </div>
       <div className="loading-progress-detail">{detail || " "}</div>
-      <div
-        className="loading-progress-bar"
-        style={{ visibility: fraction === undefined ? "hidden" : "visible" }}
-      >
-        <div
-          className="loading-progress-fill"
-          style={{ transform: `scaleX(${fraction || 0})` }}
-        />
-      </div>
+      <ProgressBar fraction={fraction} />
+    </div>
+  );
+};
+
+// Small non-blocking indicator for sprites still loading inside the graph.
+export const SpriteProgressPill = ({ progress }) => {
+  const loading = Boolean(progress && progress.loaded < progress.total);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (!loading) {
+      setVisible(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setVisible(true), SPRITE_PILL_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
+  if (!loading || !visible) return null;
+
+  return (
+    <div className="sprite-progress-pill" role="status" aria-live="polite">
+      <span>
+        Loading Pokémon {progress.loaded} / {progress.total}
+      </span>
+      <ProgressBar
+        fraction={progress.loaded / progress.total}
+        className="loading-progress-bar-small"
+      />
     </div>
   );
 };

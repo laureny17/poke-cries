@@ -10,8 +10,10 @@ import { SearchBar } from "./components/SearchBar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { IntroScreen } from "./components/IntroScreen";
 import { Tutorial } from "./components/Tutorial";
-import { LoadingText } from "./components/LoadingText";
-import { LoadingProgress } from "./components/LoadingProgress";
+import {
+  LoadingProgress,
+  SpriteProgressPill,
+} from "./components/LoadingProgress";
 import { apiClient } from "./api/client";
 import "./App.css";
 
@@ -25,6 +27,45 @@ const DEFAULT_GENERATION = "generation-i";
 const SERVER_WAKE_HINT_MS = 2500;
 // Don't hold the graph back forever if a few sprites are slow or missing.
 const SPRITE_PRELOAD_TIMEOUT_MS = 10000;
+
+// Runs an API request while reporting "waking" (server cold start) and
+// "downloading" stages through setProgress.
+const trackedRequest = async (request, setProgress, label) => {
+  const startedAt = Date.now();
+  let receivedFirstByte = false;
+  const wakeTimer = setInterval(() => {
+    if (receivedFirstByte) return;
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs >= SERVER_WAKE_HINT_MS) {
+      setProgress({
+        stage: "waking",
+        elapsedSeconds: Math.floor(elapsedMs / 1000),
+      });
+    }
+  }, 500);
+
+  setProgress({ stage: "connecting", label });
+  try {
+    return await request((event) => {
+      receivedFirstByte = true;
+      setProgress({
+        stage: "downloading",
+        label,
+        loaded: event.loaded,
+        total: event.total || 0,
+      });
+    });
+  } finally {
+    receivedFirstByte = true;
+    clearInterval(wakeTimer);
+  }
+};
+
+const titleCase = (value = "") =>
+  value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 
 // Preload sprites so the graph appears complete instead of popping in.
 // Resolves once every image has loaded/failed, or after the timeout.
@@ -69,6 +110,10 @@ export default function App() {
   const [graphData, setGraphData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [loadProgress, setLoadProgress] = useState({ stage: "connecting" });
+  const [selectedLoadProgress, setSelectedLoadProgress] = useState({
+    stage: "connecting",
+  });
+  const [spriteProgress, setSpriteProgress] = useState(null);
   const [selectedGraphLoading, setSelectedGraphLoading] = useState(false);
   const [error, setError] = useState(null);
   const [pokemonDetailsById, setPokemonDetailsById] = useState({});
@@ -302,38 +347,15 @@ export default function App() {
         console.warn("Error clearing cached similarity matrix:", err);
       }
 
-      const startedAt = Date.now();
-      let receivedFirstByte = false;
-      const wakeTimer = setInterval(() => {
-        if (receivedFirstByte) return;
-        const elapsedMs = Date.now() - startedAt;
-        if (elapsedMs >= SERVER_WAKE_HINT_MS) {
-          setLoadProgress({
-            stage: "waking",
-            elapsedSeconds: Math.floor(elapsedMs / 1000),
-          });
-        }
-      }, 500);
-
       try {
         setLoading(true);
         setError(null);
-        setLoadProgress({ stage: "connecting" });
-        const data = await apiClient.getSimilarityMatrix(
-          null,
-          0.15,
-          false,
-          (event) => {
-            receivedFirstByte = true;
-            setLoadProgress({
-              stage: "downloading",
-              loaded: event.loaded,
-              total: event.total || 0,
-            });
-          },
+        const data = await trackedRequest(
+          (onDownloadProgress) =>
+            apiClient.getSimilarityMatrix(null, 0.15, false, onDownloadProgress),
+          setLoadProgress,
+          "Loading cry data",
         );
-        receivedFirstByte = true;
-        clearInterval(wakeTimer);
 
         const spriteUrls = [
           ...new Set(
@@ -360,7 +382,6 @@ export default function App() {
       } catch (err) {
         setError(err.message);
       } finally {
-        clearInterval(wakeTimer);
         setLoading(false);
       }
     };
@@ -379,13 +400,27 @@ export default function App() {
       }
 
       setSelectedGraphLoading(true);
+      const selectedName = graphData.nodes.find(
+        (node) => node.pokemon_id === selectedPokemon,
+      )?.name;
+      const reportProgress = (progress) => {
+        if (!isCancelled) setSelectedLoadProgress(progress);
+      };
       try {
         // Fetch a broad candidate pool so selected view can reflect filter changes
         // without silently dropping less-similar pokemon.
-        const data = await apiClient.getSimilarPokemon(
-          selectedPokemon,
-          320,
-          0.0,
+        const data = await trackedRequest(
+          (onDownloadProgress) =>
+            apiClient.getSimilarPokemon(
+              selectedPokemon,
+              320,
+              0.0,
+              onDownloadProgress,
+            ),
+          reportProgress,
+          selectedName
+            ? `Loading ${titleCase(selectedName)}'s neighbors`
+            : "Loading neighbors",
         );
         if (isCancelled) return;
         setSimilarPokemon(
@@ -699,7 +734,7 @@ export default function App() {
         </div>
       ) : showCenteredLoading ? (
         <div className="center-loading">
-          <LoadingText />
+          <LoadingProgress progress={selectedLoadProgress} />
         </div>
       ) : graphData ? (
         <SimilarityGraph
@@ -718,10 +753,15 @@ export default function App() {
           tutorialSelectedStarter={
             showTutorial ? tutorialSelectedStarter : null
           }
+          onSpriteProgress={setSpriteProgress}
         />
       ) : (
         <div className="loading-overlay">No data available</div>
       )}
+
+      {!showCenteredLoading && graphData ? (
+        <SpriteProgressPill progress={spriteProgress} />
+      ) : null}
     </div>
   );
 }

@@ -48,14 +48,20 @@ export const apiClient = {
   },
 
   // Get similar Pokémon
-  getSimilarPokemon: async (pokemonId, topK = 20, minSimilarity = 0.5) => {
+  getSimilarPokemon: async (
+    pokemonId,
+    topK = 20,
+    minSimilarity = 0.5,
+    onDownloadProgress = undefined
+  ) => {
     try {
       const params = new URLSearchParams();
       params.append('top_k', topK);
       params.append('min_similarity', minSimilarity);
 
       const response = await axios.get(
-        `${API_BASE}/similarity/${pokemonId}?${params}`
+        `${API_BASE}/similarity/${pokemonId}?${params}`,
+        { onDownloadProgress }
       );
       return response.data;
     } catch (error) {

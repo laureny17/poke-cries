@@ -131,6 +131,7 @@ export const SimilarityGraph = ({
   pokemonDetailsById = {},
   tutorialStep = null,
   tutorialSelectedStarter = null,
+  onSpriteProgress = null,
 }) => {
   const OVERVIEW_MAX_LINKS_PER_NODE = 5;
   const OVERVIEW_MIN_LINK_SIMILARITY = 0.42;
@@ -144,6 +145,9 @@ export const SimilarityGraph = ({
   const layoutNodesRef = useRef([]);
   const clickTimeoutRef = useRef(null);
   const selectedAutoFitKeyRef = useRef(null);
+  // Kept in a ref so a new callback identity never triggers a graph rebuild.
+  const onSpriteProgressRef = useRef(onSpriteProgress);
+  onSpriteProgressRef.current = onSpriteProgress;
   const [tooltip, setTooltip] = useState(null);
   const [clusterTooltip, setClusterTooltip] = useState(null);
 
@@ -1154,6 +1158,34 @@ export const SimilarityGraph = ({
       .attr("opacity", 0.96)
       .style("pointer-events", "none");
 
+    // Report real sprite load progress (cached sprites settle almost instantly).
+    let spritesActive = true;
+    const spriteNodes = node.selectAll("image.node-sprite").filter(
+      (d) => Boolean(d.sprite_url),
+    );
+    const spriteTotal = spriteNodes.size();
+    let spritesSettled = 0;
+    let spriteReportFrame = null;
+    // batch to one update per frame so hundreds of loads don't each re-render
+    const reportSprites = () => {
+      if (!spritesActive || spriteReportFrame !== null) return;
+      spriteReportFrame = requestAnimationFrame(() => {
+        spriteReportFrame = null;
+        if (spritesActive) {
+          onSpriteProgressRef.current?.({
+            loaded: spritesSettled,
+            total: spriteTotal,
+          });
+        }
+      });
+    };
+    spriteNodes.on("load error", function onSpriteSettled() {
+      d3.select(this).on("load error", null);
+      spritesSettled += 1;
+      reportSprites();
+    });
+    reportSprites();
+
     if (tutorialStep === 2 && tutorialSelectedStarter) {
       node
         .filter((d) => d.pokemon_id === tutorialSelectedStarter)
@@ -1849,6 +1881,8 @@ export const SimilarityGraph = ({
     }
 
     return () => {
+      spritesActive = false;
+      if (spriteReportFrame !== null) cancelAnimationFrame(spriteReportFrame);
       if (clickTimeoutRef.current) {
         clearTimeout(clickTimeoutRef.current);
         clickTimeoutRef.current = null;
