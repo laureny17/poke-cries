@@ -71,6 +71,44 @@ code {
   letter-spacing: 0.4px;
 }
 
+.loading-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  text-align: center;
+}
+
+.loading-progress-detail {
+  font-size: 18px;
+  color: #777890;
+  max-width: 420px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+.loading-progress-bar {
+  box-sizing: border-box;
+  width: min(280px, 70vw);
+  height: 16px;
+  padding: 2px;
+  border: 2px solid #d0d4e0;
+  border-radius: 4px;
+  background: #f8f8fc;
+  box-shadow: 3px 3px 0 #d0d4e0;
+  overflow: hidden;
+}
+
+.loading-progress-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  background: #1a1a2e;
+  transform-origin: left center;
+  transition: transform 0.15s steps(4, end);
+}
+
 .loading-dots {
   display: inline-flex;
   width: 28px;

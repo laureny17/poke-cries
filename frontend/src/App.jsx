@@ -11,6 +11,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { IntroScreen } from "./components/IntroScreen";
 import { Tutorial } from "./components/Tutorial";
 import { LoadingText } from "./components/LoadingText";
+import { LoadingProgress } from "./components/LoadingProgress";
 import { apiClient } from "./api/client";
 import "./App.css";
 
@@ -19,6 +20,47 @@ import "./App.css";
 const MAX_NODES = 400;
 const GRAPH_CACHE_PREFIX = "poke-cries:similarity-matrix:";
 const DEFAULT_GENERATION = "generation-i";
+// Render's free tier sleeps when idle; if the server hasn't answered by now it's
+// most likely waking up, so tell the user instead of showing bare dots.
+const SERVER_WAKE_HINT_MS = 2500;
+// Don't hold the graph back forever if a few sprites are slow or missing.
+const SPRITE_PRELOAD_TIMEOUT_MS = 10000;
+
+// Preload sprites so the graph appears complete instead of popping in.
+// Resolves once every image has loaded/failed, or after the timeout.
+const preloadSprites = (urls, onProgress) =>
+  new Promise((resolve) => {
+    let settled = 0;
+    let finished = false;
+    const images = [];
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeoutId);
+      images.forEach((img) => {
+        img.onload = null;
+        img.onerror = null;
+      });
+      resolve();
+    };
+    const timeoutId = setTimeout(finish, SPRITE_PRELOAD_TIMEOUT_MS);
+    if (urls.length === 0) {
+      finish();
+      return;
+    }
+    urls.forEach((url) => {
+      const img = new Image();
+      const done = () => {
+        settled += 1;
+        onProgress(settled);
+        if (settled >= urls.length) finish();
+      };
+      img.onload = done;
+      img.onerror = done;
+      img.src = url;
+      images.push(img);
+    });
+  });
 
 export default function App() {
   const [selectedPokemon, setSelectedPokemon] = useState(null);
@@ -26,6 +68,7 @@ export default function App() {
   const [similarPokemon, setSimilarPokemon] = useState([]);
   const [graphData, setGraphData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadProgress, setLoadProgress] = useState({ stage: "connecting" });
   const [selectedGraphLoading, setSelectedGraphLoading] = useState(false);
   const [error, setError] = useState(null);
   const [pokemonDetailsById, setPokemonDetailsById] = useState({});
@@ -259,14 +302,65 @@ export default function App() {
         console.warn("Error clearing cached similarity matrix:", err);
       }
 
+      const startedAt = Date.now();
+      let receivedFirstByte = false;
+      const wakeTimer = setInterval(() => {
+        if (receivedFirstByte) return;
+        const elapsedMs = Date.now() - startedAt;
+        if (elapsedMs >= SERVER_WAKE_HINT_MS) {
+          setLoadProgress({
+            stage: "waking",
+            elapsedSeconds: Math.floor(elapsedMs / 1000),
+          });
+        }
+      }, 500);
+
       try {
         setLoading(true);
         setError(null);
-        const data = await apiClient.getSimilarityMatrix(null, 0.15, false);
+        setLoadProgress({ stage: "connecting" });
+        const data = await apiClient.getSimilarityMatrix(
+          null,
+          0.15,
+          false,
+          (event) => {
+            receivedFirstByte = true;
+            setLoadProgress({
+              stage: "downloading",
+              loaded: event.loaded,
+              total: event.total || 0,
+            });
+          },
+        );
+        receivedFirstByte = true;
+        clearInterval(wakeTimer);
+
+        const spriteUrls = [
+          ...new Set(
+            (data?.nodes || [])
+              .filter((node) => node.generation === DEFAULT_GENERATION)
+              .map((node) => node.sprite_url)
+              .filter(Boolean),
+          ),
+        ];
+        setLoadProgress({
+          stage: "sprites",
+          loaded: 0,
+          total: spriteUrls.length,
+        });
+        await preloadSprites(spriteUrls, (loaded) =>
+          setLoadProgress({
+            stage: "sprites",
+            loaded,
+            total: spriteUrls.length,
+          }),
+        );
+
         setGraphData(data);
       } catch (err) {
         setError(err.message);
       } finally {
+        clearInterval(wakeTimer);
         setLoading(false);
       }
     };
@@ -599,7 +693,11 @@ export default function App() {
         />
       )}
 
-      {showCenteredLoading ? (
+      {loading ? (
+        <div className="center-loading">
+          <LoadingProgress progress={loadProgress} />
+        </div>
+      ) : showCenteredLoading ? (
         <div className="center-loading">
           <LoadingText />
         </div>

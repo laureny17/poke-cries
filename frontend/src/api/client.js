@@ -68,7 +68,8 @@ export const apiClient = {
   getSimilarityMatrix: async (
     generation = null,
     minSimilarity = 0.0,
-    includeLinks = true
+    includeLinks = true,
+    onDownloadProgress = undefined
   ) => {
     try {
       const params = new URLSearchParams();
@@ -77,7 +78,8 @@ export const apiClient = {
       params.append('include_links', includeLinks ? 'true' : 'false');
 
       const response = await axios.get(
-        `${API_BASE}/similarity-matrix?${params}`
+        `${API_BASE}/similarity-matrix?${params}`,
+        { onDownloadProgress }
       );
       return response.data;
     } catch (error) {
