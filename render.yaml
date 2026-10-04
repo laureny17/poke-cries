@@ -4,4 +4,10 @@ services:
     env: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --workers 1 --threads 2 --timeout 120
+    # --max-requests recycles the worker now and then as a guard against slow
+    # memory growth; startup only takes a fraction of a second.
+    startCommand: gunicorn app:app --workers 1 --threads 2 --timeout 120 --max-requests 1000 --max-requests-jitter 100
+    envVars:
+      # fewer glibc malloc arenas = less fragmentation with threaded workers
+      - key: MALLOC_ARENA_MAX
+        value: "2"

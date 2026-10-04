@@ -224,6 +224,10 @@ def save_similarity_data(data: Dict, output_file: Path):
 
     print(f"Saved similarity data to {output_file}")
 
+    # keep the compact file the web server loads in sync with the json
+    from .data_store import write_runtime_file
+    print(f"Saved runtime data to {write_runtime_file(output_file)}")
+
 
 def load_similarity_data(input_file: Path) -> Optional[Dict]:
     """
