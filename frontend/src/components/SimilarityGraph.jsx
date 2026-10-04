@@ -8,6 +8,10 @@ import React, {
 import * as d3 from "d3";
 import { TYPE_COLORS } from "../typeColors";
 
+// Covers the second click of a double-click (OS double-click windows are
+// usually ~300-500ms; anything slower is a deliberate replay).
+const REPEAT_CLICK_IGNORE_MS = 400;
+
 const titleCase = (value) =>
   String(value || "")
     .replace(/-/g, " ")
@@ -144,7 +148,9 @@ export const SimilarityGraph = ({
   const wrapperRef = useRef();
   const zoomRef = useRef();
   const layoutNodesRef = useRef([]);
-  const clickTimeoutRef = useRef(null);
+  // Last cry-playing click, so the second click of a double-click doesn't
+  // restart the cry that the first click already started.
+  const lastCryClickRef = useRef({ pokemonId: null, time: 0 });
   const selectedAutoFitKeyRef = useRef(null);
   // Kept in a ref so a new callback identity never triggers a graph rebuild.
   const onSpriteProgressRef = useRef(onSpriteProgress);
@@ -1283,25 +1289,22 @@ export const SimilarityGraph = ({
         return;
       }
       if (!onPokemonClick) return;
-      if (selectedPokemon && d.pokemon_id === selectedPokemon) {
-        onPokemonClick(d.pokemon_id);
+      // Play right away instead of waiting to rule out a double-click; a
+      // double-click just plays the cry once while the neighborhood opens.
+      const now = performance.now();
+      const lastClick = lastCryClickRef.current;
+      if (
+        lastClick.pokemonId === d.pokemon_id &&
+        now - lastClick.time < REPEAT_CLICK_IGNORE_MS
+      ) {
         return;
       }
-      if (clickTimeoutRef.current) {
-        clearTimeout(clickTimeoutRef.current);
-      }
-      clickTimeoutRef.current = setTimeout(() => {
-        onPokemonClick(d.pokemon_id);
-        clickTimeoutRef.current = null;
-      }, 220);
+      lastCryClickRef.current = { pokemonId: d.pokemon_id, time: now };
+      onPokemonClick(d.pokemon_id);
     });
 
     node.on("dblclick", (event, d) => {
       event.stopPropagation();
-      if (clickTimeoutRef.current) {
-        clearTimeout(clickTimeoutRef.current);
-        clickTimeoutRef.current = null;
-      }
       if (tutorialStep === 1) {
         return;
       }
@@ -1888,10 +1891,6 @@ export const SimilarityGraph = ({
     return () => {
       spritesActive = false;
       if (spriteReportFrame !== null) cancelAnimationFrame(spriteReportFrame);
-      if (clickTimeoutRef.current) {
-        clearTimeout(clickTimeoutRef.current);
-        clickTimeoutRef.current = null;
-      }
       if (simulationRef.current) {
         simulationRef.current.stop();
       }
